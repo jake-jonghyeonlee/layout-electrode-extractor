@@ -7,6 +7,7 @@ from PIL import Image
 
 from layout_electrode_extractor import ManifestError, extract
 from layout_electrode_extractor.periodic import Lattice, PeriodicGraph
+from layout_electrode_extractor.review import ReviewProject
 
 
 def fixture(tmp_path: Path, masks, *, connectivity=4, contacts=(), pairs=None):
@@ -41,6 +42,63 @@ def base_masks(shape=(5, 5)):
     active = np.zeros(shape, dtype=np.uint8)
     gat[1, 1] = active[1, 1] = 255
     return {"GAT": ("GAT", gat), "ACTIVE": ("ACTIVE", active)}
+
+
+def test_physical_stack_provenance_and_legacy_behavior(tmp_path):
+    masks = base_masks()
+    for name, role in (("METAL", "METAL"), ("CNT", "CNT"), ("VIA", "VIA"), ("OTHER", "OTHER")):
+        masks[name] = role, np.zeros((5, 5), dtype=np.uint8)
+    contacts = [{"layer": hole, "lower": "ACTIVE", "upper": "METAL"} for hole in ("CNT", "VIA")]
+    path, source = fixture(tmp_path, masks, contacts=contacts)
+    order = ["GAT", "ACTIVE", "CNT", "VIA", "METAL"]
+    source["physical_stack"] = order
+    path.write_text(json.dumps(source))
+    output = tmp_path / "with-order"
+    result = extract(path, output)
+    assert result["stack"] == ["GAT", "ACTIVE", "METAL"]
+    assert result["physical_stack"] == order
+    assert json.loads((output / "manifest.json").read_text())["physical_stack"] == order
+    reviewed = ReviewProject(output).export(tmp_path / "reviewed")
+    assert json.loads((reviewed / "manifest.json").read_text())["physical_stack"] == order
+
+    source.pop("physical_stack")
+    path.write_text(json.dumps(source))
+    legacy = extract(path, tmp_path / "legacy")
+    assert "physical_stack" not in legacy
+    assert legacy["stack"] == result["stack"]
+    assert legacy["contact_rules"] == result["contact_rules"]
+    legacy_reviewed = ReviewProject(tmp_path / "legacy").export(tmp_path / "legacy-reviewed")
+    assert "physical_stack" not in json.loads((legacy_reviewed / "manifest.json").read_text())
+
+
+@pytest.mark.parametrize(
+    ("order", "message"),
+    [
+        (["GAT", "ACTIVE", "METAL"], "physical_stack"),
+        (["GAT", "ACTIVE", "CNT", "CNT", "METAL"], "physical_stack"),
+        (["GAT", "ACTIVE", "CNT", "MISSING", "METAL"], "physical_stack"),
+        (["ACTIVE", "GAT", "CNT", "VIA", "METAL"], "conductor order"),
+        (["GAT", "CNT", "ACTIVE", "VIA", "METAL"], "physical_stack order"),
+        (["GAT", "ACTIVE", "METAL", "CNT", "VIA"], "physical_stack order"),
+        (["GAT", "ACTIVE", "CNT", "VIA", "OTHER"], "physical_stack"),
+        (None, "physical_stack"),
+    ],
+)
+def test_invalid_physical_stack_fails_before_output(tmp_path, order, message):
+    masks = base_masks()
+    for name, role in (("METAL", "METAL"), ("CNT", "CNT"), ("VIA", "VIA"), ("OTHER", "OTHER")):
+        masks[name] = role, np.zeros((5, 5), dtype=np.uint8)
+    path, source = fixture(
+        tmp_path,
+        masks,
+        contacts=[{"layer": hole, "lower": "ACTIVE", "upper": "METAL"} for hole in ("CNT", "VIA")],
+    )
+    source["physical_stack"] = order
+    path.write_text(json.dumps(source))
+    output = tmp_path / "out"
+    with pytest.raises(ManifestError, match=message):
+        extract(path, output)
+    assert not output.exists()
 
 
 def read(path):

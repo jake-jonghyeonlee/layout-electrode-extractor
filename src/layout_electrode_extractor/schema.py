@@ -59,6 +59,7 @@ class Manifest:
     stack: tuple[str, ...]
     tr_pairs: tuple[tuple[str, str], ...]
     contacts: tuple[Contact, ...]
+    physical_stack: tuple[str, ...] | None = None
 
 
 def load_manifest(path: str | Path) -> Manifest:
@@ -77,7 +78,7 @@ def load_manifest(path: str | Path) -> Manifest:
     data = _keys(
         data,
         {"schema_version", "pixel_size_um", "origin_um", "layers", "stack", "tr_pairs", "contacts"},
-        {"connectivity"},
+        {"connectivity", "physical_stack"},
         "manifest",
     )
     if type(data["schema_version"]) is not int or data["schema_version"] != 1:
@@ -136,6 +137,22 @@ def load_manifest(path: str | Path) -> Manifest:
         i for i, role in roles.items() if role in _CONDUCTORS
     }:
         raise ManifestError("stack must contain every conductor layer exactly once")
+    physical_stack = None
+    if "physical_stack" in data:
+        physical_stack = data["physical_stack"]
+        relevant = {i for i, role in roles.items() if role in _CONDUCTORS | _HOLES}
+        if (
+            not isinstance(physical_stack, list)
+            or any(not isinstance(v, str) for v in physical_stack)
+            or len(physical_stack) != len(relevant)
+            or len(set(physical_stack)) != len(physical_stack)
+            or set(physical_stack) != relevant
+        ):
+            raise ManifestError(
+                "physical_stack must list every conductor and CNT/VIA layer exactly once"
+            )
+        if [lid for lid in physical_stack if roles[lid] in _CONDUCTORS] != stack:
+            raise ManifestError("physical_stack conductor order must equal stack")
     pairs = data["tr_pairs"]
     if not isinstance(pairs, list) or not pairs or len(pairs) > 64:
         raise ManifestError("tr_pairs must contain 1..64 entries")
@@ -163,6 +180,10 @@ def load_manifest(path: str | Path) -> Manifest:
             raise ManifestError(f"contacts[{index}] has invalid layer/endpoints")
         if stack.index(lower) >= stack.index(upper):
             raise ManifestError(f"contacts[{index}] endpoints violate stack order")
+        if physical_stack is not None and not (
+            physical_stack.index(lower) < physical_stack.index(layer) < physical_stack.index(upper)
+        ):
+            raise ManifestError(f"contacts[{index}] endpoints violate physical_stack order")
         seeds = row.get("holes")
         if "holes" in row:
             if not isinstance(seeds, list) or not seeds:
@@ -191,4 +212,5 @@ def load_manifest(path: str | Path) -> Manifest:
         tuple(stack),
         tuple(tr_pairs),
         tuple(contacts),
+        tuple(physical_stack) if physical_stack is not None else None,
     )

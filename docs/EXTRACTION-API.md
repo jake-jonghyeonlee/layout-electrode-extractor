@@ -22,6 +22,7 @@ invalid input or resource limits. CLI errors exit with status 2.
     {"id": "CNT1", "role": "CNT", "path": "CNT1.png"}
   ],
   "stack": ["GAT1", "ACTIVE", "METAL1"],
+  "physical_stack": ["GAT1", "ACTIVE", "CNT1", "METAL1"],
   "tr_pairs": [{"gat": "GAT1", "channel": "ACTIVE"}],
   "contacts": [{"layer": "CNT1", "lower": "ACTIVE", "upper": "METAL1"}]
 }
@@ -30,9 +31,19 @@ invalid input or resource limits. CLI errors exit with status 2.
 `layers` lists all input images, including `OTHER` layers. Every conductor
 (`GAT`, `ACTIVE`, `OACTIVE`, `METAL`, `CONDUCTOR`) appears once in `stack`, in
 height order. Every `CNT` or `VIA` layer has contact rules whose lower and upper
-IDs are conductors in the stack, in that order. A legacy layer has one rule
-without `holes`; it applies to every hole in that layer. To use more than one
-endpoint pair on one physical layer, every rule for that layer must have a
+IDs are conductors in the stack, in that order.
+
+`physical_stack` is optional. When present, it lists each conductor and each
+`CNT`/`VIA` layer ID exactly once, from bottom to top; `OTHER` layers are excluded.
+Removing the `CNT`/`VIA` IDs from it must reproduce `stack` exactly. Each
+contact rule's `lower` conductor must precede its physical hole layer, and its
+`upper` conductor must follow that layer. The endpoints need not be adjacent to
+the hole in the list. This field records declared layer order only: it does not
+infer contact endpoints, process thickness, or other fabrication properties.
+Without it, the existing conductor-only `stack` and contact validation apply.
+
+A legacy layer has one rule without `holes`; it applies to every hole in that
+layer. To use more than one endpoint pair on one physical layer, every rule must have a
 non-empty `holes` list of `[x, y]` integer pixel seeds. For example:
 
 ```json
@@ -82,6 +93,9 @@ including gate, contact, and `OTHER` layers. `source_manifest_sha256` and
 `pixel_size_um`, unit/output shapes and physical sizes explicitly describe the
 2×2 grid. IDs are deterministic for identical inputs; display names and
 annotation state belong in a separate file. `naming_complete` starts false.
+If supplied, the validated `physical_stack` is copied to extraction `manifest.json`
+and preserved in the reviewed export. Legacy manifests produce no
+`physical_stack` output field.
 
 `tr[].terminal_adjacency` records direct post-cut neighbors on each source
 layer, including the split gate branches. Each record gives a layer, electrode

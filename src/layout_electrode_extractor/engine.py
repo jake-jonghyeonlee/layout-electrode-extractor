@@ -527,6 +527,8 @@ def _extract_into(
         "issues": issues,
         "naming_complete": False,
     }
+    if manifest.physical_stack is not None:
+        metadata["physical_stack"] = list(manifest.physical_stack)
     _write_json(output / "manifest.json", metadata)
     _write_json(output / "connectivity.json", graph.describe())
     _write_json(output / "review" / "issues.json", issues)
