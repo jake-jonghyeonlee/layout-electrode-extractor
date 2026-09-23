@@ -145,6 +145,42 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
             assert all(not np.any(component & raw[name]) for name in undeclared)
     assert sum(ndimage.label(raw[name])[1] for name in ("CNT1", "CNT2")) == 20
 
+    # METAL1 has two separate top-to-bottom trunks. Their selected branches join
+    # CNT1 pad ACTIVE(100,145) and CNT2 pads OACTIVE(460,235)/(460,540); all
+    # other landing pads receive direct branches. Check the actual extracted masks.
+    raw_metal = raw["METAL1"]
+    for x in (40, 560):
+        assert np.all(raw_metal[10:590, x - 9 : x + 10])
+        assert np.any(raw_metal[0, x - 9 : x + 10])
+        assert np.any(raw_metal[599, x - 9 : x + 10])
+    for tx in (0, 1):
+        for name, unit_x in (("left", 40), ("right", 560)):
+            x = tx * 600 + unit_x
+            boundary_ids = {
+                seam_y: [
+                    row["id"]
+                    for row in result["electrodes"]
+                    if "METAL1" in row["layers"]
+                    and np.asarray(
+                        Image.open(extracted / row["layers"]["METAL1"]["path"])
+                    )[seam_y, x]
+                ]
+                for seam_y in (599, 600)
+            }
+            assert len(boundary_ids[599]) == len(boundary_ids[600]) == 1, (name, tx)
+            assert boundary_ids[599] == boundary_ids[600], (name, tx)
+            owner = next(row for row in result["electrodes"] if row["id"] == boundary_ids[599][0])
+            extracted_metal = np.asarray(Image.open(extracted / owner["layers"]["METAL1"]["path"]))
+            assert np.all(extracted_metal[10:1190, x]), (name, tx, owner["id"])
+            assert extracted_metal[0, x] and extracted_metal[1199, x], (name, tx, owner["id"])
+            selected_pads = (
+                [(tx * 600 + 100, 145)]
+                if name == "left"
+                else [(tx * 600 + 460, 235), (tx * 600 + 460, 540)]
+            )
+            for pad_x, pad_y in selected_pads:
+                assert extracted_metal[pad_y, pad_x], (name, tx, pad_x, pad_y, owner["id"])
+
     # The output keeps individual periodic bus identities while joining each seam.
     bus_ids = {}
     for name, layer, y in (("R", "GAT1", 100), ("G", "GAT2", 200), ("B", "GAT1", 300)):

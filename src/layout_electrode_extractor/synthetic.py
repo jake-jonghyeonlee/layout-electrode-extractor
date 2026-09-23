@@ -64,9 +64,18 @@ def make_synthetic(output_dir: str | Path) -> dict:
                 _line(draw, [(x, 390), (x, 560)])
             _line(draw, [(380, 460), (460, 460)])
         elif layer == "METAL1":
-            # Isolated landing pads create only the declared channel-to-metal paths.
+            # Existing isolated landing pads create only declared channel-to-metal paths.
             for x, y in ACTIVE_LANDINGS + OACTIVE_LANDINGS:
                 draw.rectangle((x - 16, y - 16, x + 16, y + 16), fill=255)
+            # Two independent vertical trunks repeat through both horizontal seams.
+            # Keep them outside every GAT/channel overlap (TR) footprint.
+            _line(draw, [(40, 0), (40, 599)])
+            _line(draw, [(560, 0), (560, 599)])
+            # The left trunk joins one CNT1 pad; the right trunk joins two CNT2 pads.
+            # The remaining pads stay independent. Ordinary GAT crossings are not contacts.
+            _line(draw, [(40, 145), (100, 145)])
+            _line(draw, [(560, 235), (460, 235)])
+            _line(draw, [(560, 540), (460, 540)])
         elif layer == "CNT1":
             for x, y in ACTIVE_LANDINGS:
                 _via(draw, x, y)

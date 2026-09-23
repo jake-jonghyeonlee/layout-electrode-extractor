@@ -31,10 +31,16 @@ three GAT layers, ACTIVE, OACTIVE, two contact layers, and METAL1. Two distinct 
 GAT1 buses represent R and B, while a GAT2 bus represents G. Vertical channels make ten
 orthogonal gate crossings per unit; the 2×2 extraction contains 40 TRs. Nine CNT1 holes join
 ACTIVE to METAL1 and eleven CNT2 holes join OACTIVE to METAL1 per unit. METAL1 pads are local
-landings rather than RGB buses. These explicit contact endpoints, layer heights, thicknesses,
-and process settings are fixture assumptions, not measured or calibrated process data.
-Review images, exact pair/contact counts, and regeneration notes are in the ignored
-`outputs/rgb-gate-crossings-20260923/` directory when generated for this run.
+landings plus two separate 20 px vertical trunks that reach both unit edges. The left trunk joins
+the CNT1 pad at ACTIVE (100,145); the right trunk joins the CNT2 pads at OACTIVE (460,235) and
+(460,540). Other pads are not directly joined by branch metal; some pads may share an electrical
+group through existing channel segments and their declared CNT contacts. These trunks cross GAT
+layers without contact and avoid all TR footprints. These explicit contact endpoints, layer
+heights, thicknesses, and process settings are fixture assumptions, not measured or calibrated
+process data.
+Review images, exact pair/contact counts, and regeneration notes for this version are in the
+ignored `outputs/rgb-metal-vertical-20260924/` directory. Earlier accepted review directories are
+preserved.
 
 Extraction preserves the 0.1 µm/px pitch and writes 1200×1200 px, or 120×120 µm. This has four
 times the unit cell area (14,400 µm² versus 3,600 µm²); raw critical area and defect counts do
