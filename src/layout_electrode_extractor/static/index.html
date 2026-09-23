@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layout electrode review</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <header>
+    <div><h1>Layout electrode review</h1><p id="summary"></p></div>
+    <div class="actions"><button id="save">Save annotations</button><button id="export">Export named masks</button></div>
+  </header>
+  <main>
+    <section class="viewer">
+      <div class="toolbar"><label>Layer <select id="layer"></select></label><span id="selection-title">Select an electrode or TR</span></div>
+      <div class="visuals">
+        <div class="canvas-wrap"><canvas id="layout"></canvas></div>
+        <div class="schematic-panel">
+          <h2>Schematic reference</h2>
+          <div id="schematic-wrap"><p>Start review with <code>--schematic image.png</code> to show a circuit image.</p></div>
+        </div>
+      </div>
+    </section>
+    <aside>
+      <div class="tabs"><button id="electrode-tab">Electrodes</button><button id="tr-tab">TRs</button></div>
+      <div class="filters"><input id="search" type="search" placeholder="Search ID or name"><label><input id="unnamed" type="checkbox"> Unnamed only</label></div>
+      <div id="object-list" class="object-list"></div>
+      <section id="editor" class="editor"><p>Select an item to name it.</p></section>
+      <section id="suggestions" class="suggestions"></section>
+      <p id="status" role="status"></p>
+    </aside>
+  </main>
+</body>
+</html>
