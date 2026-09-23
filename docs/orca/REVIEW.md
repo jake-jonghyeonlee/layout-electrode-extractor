@@ -241,3 +241,78 @@ is unreachable dead code: `_stack_layers` (called immediately before, line 145) 
 Finding 2 needs an author decision (treat `CONDUCTOR` like `METAL` for OACTIVE-side ILD placement,
 or raise an explicit diagnostic) and a re-review bound to the new SHA before this candidate can
 carry an unconditional PASS. The three T4 Finding-1 bullets are closed and need no further action.
+
+# T7 candidate re-review
+
+Reviewer: Claude Sonnet, high effort, read-only (Task `task_dfe47171b5f3`). Candidate:
+`6b8bd682f9d1dfaf4df4d1e84e9027c09c016b04` (baseline `3486da9513425883bc367160b7b7e90b9df4ad3a`, the
+commit that recorded Finding 2 above). Diff scope confirmed by
+`git diff 3486da95 6b8bd682 --stat`: `README.md`, `src/layout_electrode_extractor/
+particle_sim_adapter.py`, `tests/test_synthetic_adapter.py` only — no other product file touched.
+Worktree HEAD verified at the exact candidate SHA; the only uncommitted change is the
+coordinator-owned `docs/orca/CHECKPOINT.md`, outside candidate scope. Independently reran on this
+exact SHA: `pytest -q` — 26 passed (25 before, +1 new adapter test); `ruff check .` — all checks
+passed; `ruff format --check .` — only the same pre-existing Python-fence formatting flag inside
+this reviewer-owned `docs/orca/REVIEW.md` file (present since T4, not a T5/T7 regression, not a
+source/test file).
+
+## Finding 2 — verified fixed
+
+`_stack_layers` now collects `upper_conductor_ids` from every `conductor_ids` entry whose role is
+`METAL` **or** `CONDUCTOR` (`particle_sim_adapter.py:33-35`), not just literal `METAL`-role layers,
+and the OACTIVE-side ILD placement branch (`:56-65`) is keyed on this widened set. Critically, the
+narrower gap Finding 2 called out — silent skip when **zero** METAL/CONDUCTOR-role layer exists
+anywhere in the stack — is now closed by an explicit `elif oactive_ids: raise ManifestError(...)`
+(`:66-70`), not just the pre-existing "exists elsewhere but not after OACTIVE" branch.
+
+Verification performed, all independently reproduced against this exact SHA:
+
+- Reran the candidate's own new `test_conductor_role_above_oactive_gets_assumed_ild` (renames only
+  `METAL1`'s role to `CONDUCTOR`, keeping the ID) — passes.
+- Reproduced Finding 2's exact original repro (`make_synthetic()` manifest, `METAL1` role
+  `METAL`→`CONDUCTOR`) directly via `.venv/bin/python3`: `extract()`/`export_particle_sim()` both
+  succeed, `product["stack"]` now contains `OACTIVE`, `ILD_OACTIVE_METAL`, `CNT1`, `CNT2`,
+  `METAL1` in that process order — the previously-missing row is emitted, keyed on role as
+  intended.
+- Reproduced the **deeper** case Finding 2 flagged as unaddressed by the narrower "exists elsewhere"
+  branch: relabeled `METAL1` to role `GAT` (zero METAL/CONDUCTOR-role layers anywhere in the whole
+  stack). Confirmed `export_particle_sim` now raises `ManifestError: unsupported assumed stack:
+  OACTIVE role has no upper METAL or CONDUCTOR role for ILD placement` and `not output.exists()` —
+  previously this silently produced an incomplete stack with no diagnostic; now it fails before
+  creating any output, matching the T7 charge.
+- Ran the unmodified default synthetic fixture (no regression check): 98 electrodes, 88 nets, 2
+  contacts, 4,743 classified pairs, 1200×1200px — matches the T5/T6 checkpoint numbers exactly.
+- Ran the actual `particle-sim validate-input` CLI (sibling `~/git/particle-sim` checkout,
+  read-only, unmodified) against both the regenerated default-fixture `product.yaml` and the
+  CONDUCTOR-role-fixed `product.yaml`: both report `status: "ok"`, `shape_yx: [1200, 1200]`,
+  `pixel_size_um: [0.1, 0.1]`, `unresolved_electrode_pairs: 0` — end-to-end particle-sim
+  compatibility confirmed for the fix, not just unit tests.
+- Confirmed no stale references to the old `metal_ids` name remain (`grep` over the file).
+- Confirmed T5's separately-noted dead-code observation (`if conductors[-1] not in layers:` at the
+  old line 146) is removed in this candidate, and that removal is safe: `_stack_layers` (called
+  immediately before, unchanged in this regard) already raises `ManifestError` for any
+  `conductor_ids` entry — including the last — missing from `layers`, so the check was provably
+  unreachable before deletion.
+- Confirmed all three T4 Finding-1 fixes remain intact: `test_renamed_roles_and_non_top_metal_
+  contact_endpoint`, `test_ambiguous_role_stack_fails_before_creating_output`, and
+  `test_unsupported_contact_endpoint_fails_before_creating_output` all still pass unmodified.
+- `README.md`'s adapter section is updated accurately ("first METAL- or CONDUCTOR-role layer above
+  it") and matches the implemented behavior.
+
+I attempted one further edge case (a `CONDUCTOR`-role layer positioned *before* OACTIVE with nothing
+METAL/CONDUCTOR-role *after* it, to exercise the pre-existing "`not later_metals`" branch under the
+widened role set) but could not construct it through the public `extract()` path: relabeling `GAT1`
+to `CONDUCTOR` breaks unrelated `schema.py` TR-pair validation (`tr_pairs[0] must name a GAT and
+ACTIVE/OACTIVE`) first. That branch's logic is unchanged from T5/T6 (only its input list's role
+membership was widened), is schema-guarded against this construction on the only reachable input
+path, and is outside Finding 2's scope, so this does not block the verdict below.
+
+## Verdict
+
+**Unconditional PASS, bound to exact candidate `6b8bd682f9d1dfaf4df4d1e84e9027c09c016b04` over
+baseline `3486da9513425883bc367160b7b7e90b9df4ad3a`.** Finding 2 is fixed, including the deeper
+zero-role-anywhere case its own text identified as the harder half of the recommendation; all prior
+T4/T5 fixes remain intact and independently re-verified; particle-sim end-to-end compatibility is
+confirmed unregressed for both the default fixture and the fix's own repro. This PASS is void the
+moment `particle_sim_adapter.py`, `test_synthetic_adapter.py`, or the adapter-relevant part of
+`README.md` changes again — re-review any new candidate SHA before reuse.
