@@ -72,7 +72,7 @@ def make_synthetic(output_dir: str | Path) -> dict:
             _line(draw, [(40, 0), (40, 599)])
             _line(draw, [(560, 0), (560, 599)])
             # The left trunk joins one CNT1 pad; the right trunk joins two CNT2 pads.
-            # The remaining pads stay independent. Ordinary GAT crossings are not contacts.
+            # Other pads have no direct metal branch. GAT crossings are not contacts.
             _line(draw, [(40, 145), (100, 145)])
             _line(draw, [(560, 235), (460, 235)])
             _line(draw, [(560, 540), (460, 540)])

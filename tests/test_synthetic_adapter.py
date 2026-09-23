@@ -146,8 +146,8 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
     assert sum(ndimage.label(raw[name])[1] for name in ("CNT1", "CNT2")) == 20
 
     # METAL1 has two separate top-to-bottom trunks. Their selected branches join
-    # CNT1 pad ACTIVE(100,145) and CNT2 pads OACTIVE(460,235)/(460,540); all
-    # other landing pads receive direct branches. Check the actual extracted masks.
+    # CNT1 pad ACTIVE(100,145) and CNT2 pads OACTIVE(460,235)/(460,540);
+    # other landing pads have no direct trunk branch. Check extracted masks.
     raw_metal = raw["METAL1"]
     for x in (40, 560):
         assert np.all(raw_metal[10:590, x - 9 : x + 10])
@@ -161,9 +161,9 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
                     row["id"]
                     for row in result["electrodes"]
                     if "METAL1" in row["layers"]
-                    and np.asarray(
-                        Image.open(extracted / row["layers"]["METAL1"]["path"])
-                    )[seam_y, x]
+                    and np.asarray(Image.open(extracted / row["layers"]["METAL1"]["path"]))[
+                        seam_y, x
+                    ]
                 ]
                 for seam_y in (599, 600)
             }
