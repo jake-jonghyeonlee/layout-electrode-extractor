@@ -18,7 +18,13 @@ def test_synthetic_extract_and_particle_sim_export(tmp_path: Path) -> None:
     assert manifest["pixel_size_um"] == 0.1
     assert len(manifest["tr_pairs"]) == 2
     assert {row["id"] for row in manifest["layers"]} == {
-        "GAT1", "GAT2", "ACTIVE", "OACTIVE", "CNT1", "CNT2", "METAL1"
+        "GAT1",
+        "GAT2",
+        "ACTIVE",
+        "OACTIVE",
+        "CNT1",
+        "CNT2",
+        "METAL1",
     }
     with Image.open(source / "masks" / "GAT1.png") as image:
         assert image.size == (600, 600)
@@ -53,7 +59,8 @@ def test_synthetic_extract_and_particle_sim_export(tmp_path: Path) -> None:
         assert electrode["net_id"] == source_id
     assert len(product["electrode_pairs"]) == report["classified_pairs"]
     assert len(product["electrode_pairs"]) == sum(
-        1 for i, first in enumerate(product["electrodes"])
+        1
+        for i, first in enumerate(product["electrodes"])
         for second in product["electrodes"][i + 1 :]
         if first["net_id"] != second["net_id"]
     )

@@ -212,7 +212,8 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
         "unsupported_contact_topologies": [
             issue
             for issue in meta.get("issues", [])
-            if issue.get("type") in {
+            if issue.get("type")
+            in {
                 "periodic_contact_network",
                 "multi_endpoint_contact",
                 "missing_endpoint_contact",

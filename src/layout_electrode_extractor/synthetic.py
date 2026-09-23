@@ -21,8 +21,12 @@ def make_synthetic(output_dir: str | Path) -> dict:
     masks.mkdir()
     layers: dict[str, tuple[str, np.ndarray]] = {}
     for layer, role in (
-        ("GAT1", "GAT"), ("GAT2", "GAT"), ("ACTIVE", "ACTIVE"),
-        ("OACTIVE", "OACTIVE"), ("CNT1", "CNT"), ("CNT2", "CNT"),
+        ("GAT1", "GAT"),
+        ("GAT2", "GAT"),
+        ("ACTIVE", "ACTIVE"),
+        ("OACTIVE", "OACTIVE"),
+        ("CNT1", "CNT"),
+        ("CNT2", "CNT"),
         ("METAL1", "METAL"),
     ):
         image = Image.new("L", (600, 600), 0)
@@ -38,8 +42,15 @@ def make_synthetic(output_dir: str | Path) -> dict:
             _line(
                 draw,
                 [
-                    (0, 210), (70, 210), (120, 190), (210, 190), (260, 230),
-                    (350, 230), (400, 200), (530, 200), (599, 220),
+                    (0, 210),
+                    (70, 210),
+                    (120, 190),
+                    (210, 190),
+                    (260, 230),
+                    (350, 230),
+                    (400, 200),
+                    (530, 200),
+                    (599, 220),
                 ],
             )
             _line(draw, [(120, 190), (120, 130), (170, 100)])
@@ -50,8 +61,14 @@ def make_synthetic(output_dir: str | Path) -> dict:
             _line(
                 draw,
                 [
-                    (0, 410), (90, 410), (140, 450), (260, 450),
-                    (300, 420), (390, 420), (450, 390), (599, 390),
+                    (0, 410),
+                    (90, 410),
+                    (140, 450),
+                    (260, 450),
+                    (300, 420),
+                    (390, 420),
+                    (450, 390),
+                    (599, 390),
                 ],
             )
             _line(draw, [(260, 450), (260, 510), (220, 540), (160, 540), (130, 510), (130, 450)])
