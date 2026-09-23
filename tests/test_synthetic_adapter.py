@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from layout_electrode_extractor.engine import extract
 from layout_electrode_extractor.particle_sim_adapter import export_particle_sim
 from layout_electrode_extractor.review import ReviewProject
+from layout_electrode_extractor.schema import ManifestError
 from layout_electrode_extractor.synthetic import make_synthetic
 
 
@@ -69,3 +71,79 @@ def test_synthetic_extract_and_particle_sim_export(tmp_path: Path) -> None:
         with Image.open(adapted / contact["path"]) as image:
             assert image.size == (1200, 1200)
     assert (adapted / "adapter-provenance.json").is_file()
+
+
+def _renamed_manifest(path: Path, *, add_ambiguous_active: bool = False) -> Path:
+    manifest_path = Path(make_synthetic(path)["manifest"])
+    manifest = json.loads(manifest_path.read_text())
+    renames = {"ACTIVE": "ACT_A", "OACTIVE": "OACT_A", "METAL1": "MTL_TOP"}
+    for layer in manifest["layers"]:
+        layer["id"] = renames.get(layer["id"], layer["id"])
+    manifest["stack"] = [renames.get(layer, layer) for layer in manifest["stack"]]
+    manifest["tr_pairs"] = [
+        {
+            "gat": pair["gat"],
+            "channel": renames.get(pair["channel"], pair["channel"]),
+        }
+        for pair in manifest["tr_pairs"]
+    ]
+    for contact in manifest["contacts"]:
+        contact["lower"] = renames.get(contact["lower"], contact["lower"])
+        contact["upper"] = renames.get(contact["upper"], contact["upper"])
+        if contact["layer"] == "CNT1":
+            contact["upper"] = "MTL_MID"
+    manifest["stack"].insert(manifest["stack"].index("MTL_TOP"), "MTL_MID")
+    manifest["layers"].append({"id": "MTL_MID", "path": "masks/MTL_MID.png", "role": "METAL"})
+    Image.open(path / "masks" / "METAL1.png").save(path / "masks" / "MTL_MID.png")
+    if add_ambiguous_active:
+        manifest["layers"].append({"id": "ACT_B", "path": "masks/ACT_B.png", "role": "ACTIVE"})
+        manifest["stack"].insert(manifest["stack"].index("OACT_A"), "ACT_B")
+        Image.open(path / "masks" / "ACTIVE.png").save(path / "masks" / "ACT_B.png")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    return manifest_path
+
+
+def test_renamed_roles_and_non_top_metal_contact_endpoint(tmp_path: Path) -> None:
+    input_manifest = _renamed_manifest(tmp_path / "renamed-input")
+    extraction = tmp_path / "renamed-extraction"
+    extract(input_manifest, extraction)
+
+    output = tmp_path / "renamed-particle-sim"
+    export_particle_sim(extraction, output)
+    product = json.loads((output / "product.yaml").read_text())
+    stack_order = {layer["layer_name"]: layer["process_order"] for layer in product["stack"]}
+    assert {"ACT_A", "OACT_A", "MTL_MID", "MTL_TOP"} <= stack_order.keys()
+    assert stack_order["ILD_ACTIVE_OACTIVE"] < stack_order["OACT_A"]
+    assert stack_order["ILD_OACTIVE_METAL"] < stack_order["MTL_MID"]
+    assert stack_order["ACT_A"] < stack_order["CNT1"] < stack_order["MTL_MID"]
+    assert stack_order["OACT_A"] < stack_order["CNT2"] < stack_order["MTL_TOP"]
+    assert product["contacts"][0]["upper_layer"] == "MTL_MID"
+    assert product["particle_source_steps"][0]["lands_after_layer"] == "MTL_TOP"
+
+
+def test_ambiguous_role_stack_fails_before_creating_output(tmp_path: Path) -> None:
+    input_manifest = _renamed_manifest(tmp_path / "ambiguous-input", add_ambiguous_active=True)
+    extraction = tmp_path / "ambiguous-extraction"
+    extract(input_manifest, extraction)
+    output = tmp_path / "unsupported-particle-sim"
+
+    with pytest.raises(ManifestError, match="multiple ACTIVE-role layers"):
+        export_particle_sim(extraction, output)
+
+    assert not output.exists()
+
+
+def test_unsupported_contact_endpoint_fails_before_creating_output(tmp_path: Path) -> None:
+    input_manifest = _renamed_manifest(tmp_path / "invalid-contact-input")
+    extraction = tmp_path / "invalid-contact-extraction"
+    extract(input_manifest, extraction)
+    extraction_manifest = extraction / "manifest.json"
+    metadata = json.loads(extraction_manifest.read_text())
+    metadata["contact_rules"][0]["upper"] = "UNKNOWN_LAYER"
+    extraction_manifest.write_text(json.dumps(metadata) + "\n")
+    output = tmp_path / "invalid-contact-particle-sim"
+
+    with pytest.raises(ManifestError, match="unsupported contact topology"):
+        export_particle_sim(extraction, output)
+
+    assert not output.exists()

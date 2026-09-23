@@ -9,6 +9,127 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from .schema import ManifestError
+
+_CONDUCTOR_ROLES = {"GAT", "ACTIVE", "OACTIVE", "METAL", "CONDUCTOR"}
+
+
+def _stack_layers(meta: dict, layers: dict[str, dict], contacts: list[dict]) -> list[dict]:
+    """Build assumed simulator stack rows from roles and explicit contact endpoints."""
+    conductor_ids = meta.get("stack")
+    if not isinstance(conductor_ids, list) or not conductor_ids:
+        raise ManifestError("particle-sim export requires a non-empty conductor stack")
+    for layer_id in conductor_ids:
+        if layer_id not in layers or layers[layer_id].get("role") not in _CONDUCTOR_ROLES:
+            raise ManifestError(
+                f"unsupported particle-sim stack: '{layer_id}' is missing a conductor role"
+            )
+
+    by_role: dict[str, list[str]] = {}
+    for layer_id in conductor_ids:
+        by_role.setdefault(layers[layer_id]["role"], []).append(layer_id)
+    active_ids = by_role.get("ACTIVE", [])
+    oactive_ids = by_role.get("OACTIVE", [])
+    metal_ids = by_role.get("METAL", [])
+    if active_ids and len(active_ids) != 1:
+        raise ManifestError(
+            "unsupported assumed stack: multiple ACTIVE-role layers make the ACTIVE/OACTIVE "
+            "dielectric placement ambiguous"
+        )
+    if oactive_ids and len(oactive_ids) != 1:
+        raise ManifestError(
+            "unsupported assumed stack: multiple OACTIVE-role layers make dielectric placement "
+            "ambiguous"
+        )
+
+    order = {layer_id: index for index, layer_id in enumerate(conductor_ids)}
+    before: dict[str, list[tuple[str, float, float | None]]] = {}
+    if active_ids and oactive_ids:
+        active, oactive = active_ids[0], oactive_ids[0]
+        if order[active] >= order[oactive]:
+            raise ManifestError(
+                "unsupported assumed stack: ACTIVE role must precede OACTIVE role for ILD placement"
+            )
+        before.setdefault(oactive, []).append(("ILD_ACTIVE_OACTIVE", 0.2, 0.5))
+    if oactive_ids and metal_ids:
+        later_metals = [
+            layer_id for layer_id in metal_ids if order[layer_id] > order[oactive_ids[0]]
+        ]
+        if not later_metals:
+            raise ManifestError(
+                "unsupported assumed stack: no METAL-role conductor follows OACTIVE for "
+                "ILD placement"
+            )
+        before.setdefault(later_metals[0], []).append(("ILD_OACTIVE_METAL", 0.2, 0.5))
+
+    contact_by_upper: dict[str, list[dict]] = {}
+    for contact in contacts:
+        lower, upper = contact.get("lower"), contact.get("upper")
+        if lower not in order or upper not in order or order[lower] >= order[upper]:
+            raise ManifestError(
+                f"unsupported contact topology for '{contact.get('layer')}': declared lower/upper "
+                "endpoints must be ordered conductor layers in the source stack"
+            )
+        contact_by_upper.setdefault(upper, []).append(contact)
+
+    conductor_names = set(conductor_ids)
+    used_names = conductor_names | {contact["layer"] for contact in contacts}
+
+    def unique_name(base: str) -> str:
+        candidate = base
+        suffix = 2
+        while candidate in used_names:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        used_names.add(candidate)
+        return candidate
+
+    rows: list[dict] = []
+    emitted_contacts: set[str] = set()
+    for layer_id in conductor_ids:
+        for base, thickness, planarization in before.get(layer_id, []):
+            row = {
+                "layer_name": unique_name(base),
+                "process_order": len(rows),
+                "material_type": "inorganic",
+                "thickness_um": thickness,
+                "patterned": False,
+            }
+            if planarization is not None:
+                row["planarization_factor"] = planarization
+            rows.append(row)
+        for contact in contact_by_upper.get(layer_id, []):
+            hole = contact["layer"]
+            if hole in conductor_names or hole in emitted_contacts:
+                raise ManifestError(f"unsupported contact topology: duplicate layer ID '{hole}'")
+            used_names.add(hole)
+            emitted_contacts.add(hole)
+            rows.append(
+                {
+                    "layer_name": hole,
+                    "process_order": len(rows),
+                    "material_type": "inorganic",
+                    "thickness_um": 0.02,
+                    "patterned": False,
+                }
+            )
+        role = layers[layer_id]["role"]
+        rows.append(
+            {
+                "layer_name": layer_id,
+                "process_order": len(rows),
+                "material_type": "conductor",
+                "thickness_um": 0.05 if role == "GAT" else 0.1,
+                "patterned": True,
+            }
+        )
+    if emitted_contacts != {contact["layer"] for contact in contacts}:
+        missing = sorted({contact["layer"] for contact in contacts} - emitted_contacts)
+        raise ManifestError(
+            f"unsupported contact topology: upper endpoint not emitted for contact layers {missing}"
+        )
+    return rows
+
 
 def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> dict:
     """Write a schema-2.0 JSON/YAML-compatible product manifest and masks."""
@@ -18,8 +139,13 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
         raise FileExistsError(f"output already exists: {output}")
     meta = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
     layers = {row["id"]: row for row in meta["layers"]}
-    conductors = [name for name in meta["stack"]]
+    conductors = list(meta["stack"])
     contacts = [row for row in meta["contact_rules"]]
+    # Resolve unsupported or ambiguous topology before creating any output files.
+    product_layers = _stack_layers(meta, layers, contacts)
+    if conductors[-1] not in layers:
+        raise ManifestError("particle-sim export requires a real top conductor for source landing")
+    source_layer = conductors[-1]
     electrode_rows = []
     electrode_masks: dict[str, Path] = {}
     electrode_by_layer: dict[str, list[dict]] = {name: [] for name in conductors}
@@ -39,61 +165,6 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
             electrode_rows.append(row)
             electrode_by_layer[layer].append(row)
             electrode_masks[path] = source / info["path"]
-
-    product_layers = []
-    for name in conductors:
-        role = layers[name]["role"]
-        product_layers.append(
-            {
-                "layer_name": name,
-                "process_order": len(product_layers),
-                "material_type": "conductor",
-                "thickness_um": 0.05 if role == "GAT" else 0.1,
-                "patterned": True,
-            }
-        )
-        if name == "ACTIVE":
-            product_layers.append(
-                {
-                    "layer_name": "ILD_ACTIVE_OACTIVE",
-                    "process_order": len(product_layers),
-                    "material_type": "inorganic",
-                    "thickness_um": 0.2,
-                    "planarization_factor": 0.5,
-                    "patterned": False,
-                }
-            )
-        if name == "OACTIVE":
-            product_layers.append(
-                {
-                    "layer_name": "ILD_OACTIVE_METAL1",
-                    "process_order": len(product_layers),
-                    "material_type": "inorganic",
-                    "thickness_um": 0.2,
-                    "planarization_factor": 0.5,
-                    "patterned": False,
-                }
-            )
-    for contact in contacts:
-        # Explicit endpoints make the invented stack's skipped layers unambiguous.
-        hole = contact["layer"]
-        product_layers.append(
-            {
-                "layer_name": hole,
-                "process_order": len(product_layers),
-                "material_type": "inorganic",
-                "thickness_um": 0.02,
-                "patterned": False,
-            }
-        )
-    # All non-patterned contact layers must sort between their declared endpoints.
-    # Place contact markers immediately before METAL1 and retain explicit endpoint refs.
-    metal_order = next(i for i, row in enumerate(product_layers) if row["layer_name"] == "METAL1")
-    before = [row for row in product_layers if row["layer_name"] in {c["layer"] for c in contacts}]
-    conduct = [row for row in product_layers if row not in before]
-    product_layers = conduct[:metal_order] + before + conduct[metal_order:]
-    for index, row in enumerate(product_layers):
-        row["process_order"] = index
 
     output.mkdir(parents=True)
     masks_dir = output / "masks"
@@ -118,7 +189,7 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
                 "hole_layer": hole,
                 "lower_layer": contact["lower"],
                 "upper_layer": contact["upper"],
-                "applicable_particle_source_steps": ["SOURCE_AFTER_METAL1"],
+                "applicable_particle_source_steps": ["SOURCE_AFTER_TOP_CONDUCTOR"],
             }
         )
         with Image.open(source / "cut_layers" / f"{hole}.png") as image:
@@ -145,8 +216,8 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
 
     steps = [
         {
-            "step_id": "SOURCE_AFTER_METAL1",
-            "lands_after_layer": "METAL1",
+            "step_id": "SOURCE_AFTER_TOP_CONDUCTOR",
+            "lands_after_layer": source_layer,
             "surface_model": "flat",
             "fab_distribution_layer": "ASSUMED_SYNTHETIC_SOURCE",
         }
@@ -209,6 +280,7 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
             "no ROI-boundary terminals declared; edge cuts remain open-boundary limited"
         ),
         "particle_sim_periodicity": "not supported; output is a 2x2 finite image",
+        "particle_source_lands_after_layer": source_layer,
         "unsupported_contact_topologies": [
             issue
             for issue in meta.get("issues", [])

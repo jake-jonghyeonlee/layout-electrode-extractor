@@ -60,6 +60,15 @@ and cross-layer pairs are `vertical_short`. No pairs are silently omitted. This 
 large pair set; select a separately reviewed, explicitly excluded pair subset for bounded smoke
 runs, and do not interpret such a smoke as validation of all pairs or of physical failure rates.
 
+Adapter stack placement uses semantic `role` values, not layer IDs, so names such as `ACT_A`,
+`OACT_A`, and `MTL_TOP` work. The assumed ILD rows are placed before the OACTIVE role and the
+first METAL role above it, while each contact marker is placed immediately before its declared
+upper endpoint. The particle source step lands after the last conductor in the declared stack.
+If ACTIVE/OACTIVE roles make assumed dielectric placement ambiguous, or a contact's endpoints
+cannot be placed in source-stack order, export raises a `ManifestError` before creating output.
+These assumed dielectric locations and thicknesses remain illustrative process settings, not
+inferred physical measurements.
+
 ## Commands and outputs
 
 ```sh
