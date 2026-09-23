@@ -41,9 +41,10 @@ erased or treated as a product review PASS.
   unit produces 1200×1200 images with approximately 20 px (2 µm) wires, two GAT layers, ACTIVE,
   OACTIVE, two CNT layers, and METAL1.
 - The local review UI supports electrode/TR selection, naming, saved annotations, circuit links,
-  and named-mask export. Circuit input supports G/S/D TFT devices with optional B; a body
-  connection is not invented for a three-terminal TFT. Four-terminal MOS/SPICE data remains
-  supported.
+  and named-mask export. JSON/CSV circuit tables support G/S/D TFT devices with optional B, so a
+  body connection is not invented for a three-terminal TFT; they also support four-terminal MOS
+  devices. There is no direct SPICE import. A supplied schematic image is a visual reference for
+  human-confirmed connectivity; the UI does not infer a wire graph or run OCR on it.
 - The particle-sim adapter exports schema 2.0 input, explicit pair classifications, stack rows,
   contact provenance, and per-layer masks. Assumed dielectric placement uses declared roles and
   treats METAL and CONDUCTOR as valid upper conductors. Unsupported or ambiguous stacks raise
