@@ -19,28 +19,36 @@ python -m venv .venv
 
 The last command opens the local review page at `http://127.0.0.1:8765`. Select TRs and
 electrodes, enter names and optional circuit links, then save annotations in the UI. In another
-terminal, or after stopping the review server, export the reviewed folders and adapter input:
+terminal, or after stopping the review server, export the reviewed folders:
 
 ```sh
 .venv/bin/layout-electrode-extractor export-reviewed outputs/demo/extraction outputs/demo/reviewed --circuit examples/circuit.csv
-.venv/bin/layout-electrode-extractor export-particle-sim outputs/demo/reviewed outputs/demo/particle-sim
 ```
 
 The generator writes a 600×600 px unit at 0.1 µm/px with approximately 20 px (2 µm) wires,
 three GAT layers, ACTIVE, OACTIVE, two contact layers, and METAL1. Two distinct horizontal
 GAT1 buses represent R and B, while a GAT2 bus represents G. Vertical channels make ten
-orthogonal gate crossings per unit; the 2×2 extraction contains 40 TRs. Nine CNT1 holes join
-ACTIVE to METAL1 and eleven CNT2 holes join OACTIVE to METAL1 per unit. METAL1 pads are local
-landings plus two separate 20 px vertical trunks that reach both unit edges. The left trunk joins
-the CNT1 pad at ACTIVE (100,145); the right trunk joins the CNT2 pads at OACTIVE (460,235) and
-(460,540). Other pads are not directly joined by branch metal; some pads may share an electrical
-group through existing channel segments and their declared CNT contacts. These trunks cross GAT
-layers without contact and avoid all TR footprints. These explicit contact endpoints, layer
-heights, thicknesses, and process settings are fixture assumptions, not measured or calibrated
-process data.
-Review images, exact pair/contact counts, and regeneration notes for this version are in the
-ignored `outputs/rgb-metal-vertical-20260924/` directory. Earlier accepted review directories are
+orthogonal declared gate crossings per unit; the 2×2 extraction contains 40 TRs. CNT1 is one
+physical mask with three explicitly seeded endpoint pairs: nine ACTIVE–METAL1, two
+GAT2–ACTIVE, and one direct GAT2–METAL1 hole per unit. Eleven CNT2 holes join
+OACTIVE–METAL1. METAL1 pads are local landings plus two separate 20 px vertical
+trunks that reach both unit edges. The left trunk joins
+the CNT1 pad at ACTIVE (100,145) and GAT2 at (40,200); the right trunk joins the CNT2 pads
+at OACTIVE (460,235) and (460,540). The GAT2 stubs join that upper ACTIVE fragment through
+CNT1 (100,120) to a distinct lower ACTIVE fragment through CNT1 (180,325). This makes a
+METAL1 → ACTIVE → GAT2 → ACTIVE path, as well as the direct METAL1 → GAT2 contact and
+independent direct METAL1 → ACTIVE/OACTIVE examples. Other pads are not directly joined by
+branch metal. TR intersections are removed from every layer and never act as contacts.
+The GAT2–ACTIVE overlaps are contact landings, outside the declared TR pairs.
+These contact endpoints and process geometry are fixture assumptions, not
+measured or calibrated process data.
+Review images, per-hole labels, exact pair/contact counts, and regeneration notes are in the
+ignored `outputs/rgb-contact-routing-20260924/` directory. Earlier accepted review directories are
 preserved.
+
+The adapter currently requires one endpoint pair per physical CNT/VIA mask, so
+`export-particle-sim` rejects this mixed CNT1 example before creating output. The tests retain
+a separate legacy one-pair-per-layer fixture to validate the adapter's supported path.
 
 Extraction preserves the 0.1 µm/px pitch and writes 1200×1200 px, or 120×120 µm. This has four
 times the unit cell area (14,400 µm² versus 3,600 µm²); raw critical area and defect counts do
@@ -52,12 +60,12 @@ an artificial terminal; this fixture declares no automatic ROI-boundary terminal
 
 ## Validate and run particle-sim
 
-Install or use the read-only particle-sim checkout separately. For the local checkout used during
-integration, validate the generated schema 2.0 manifest with:
+Install or use the read-only particle-sim checkout separately. For a supported legacy
+one-pair-per-layer export, validate its generated schema 2.0 manifest with:
 
 ```sh
 /Users/jonghyeonlee/git/particle-sim/.venv/bin/particle-sim validate-input \
-  --product-config outputs/demo/particle-sim/product.yaml
+  --product-config PATH/TO/LEGACY/particle-sim/product.yaml
 ```
 
 The adapter writes raw repeated conductor masks for topography and passes TR-cut CNT/VIA masks
