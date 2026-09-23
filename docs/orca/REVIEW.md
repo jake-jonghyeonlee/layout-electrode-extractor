@@ -124,3 +124,120 @@ Finding 1 needs an author fix (role-driven layer matching, explicit diagnostic i
 `StopIteration`, endpoint-aware contact ordering, and a README/adapter-provenance note documenting
 the constraint until fixed) and a re-review bound to the new SHA before this candidate can carry an
 unconditional PASS.
+
+# T5 candidate re-review (T6)
+
+Reviewer: Claude Sonnet, high effort, read-only (Task `task_904c4294584e`, Dispatch
+`ctx_aa6a7336c310`). Candidate: `23f71965da20b0e1fc13eba039ded0eece2b9f26` (baseline
+`0b5e98edf9db4f42980552f67110a74610dd539b`, the commit that recorded the T4 findings above). Diff
+scope confirmed by `git diff 0b5e98e 23f7196 --stat`: `README.md`, `src/layout_electrode_extractor/
+particle_sim_adapter.py`, `tests/test_synthetic_adapter.py` only — no other product file touched.
+Independently reran on this exact SHA: `pytest -q` — 25 passed (22 before, +3 new adapter tests);
+`ruff check .` — all checks passed; `ruff format --check .` — only flags the Python fence inside
+this reviewer-owned `docs/orca/REVIEW.md` file (pre-existing since T4, not a T5 regression, not a
+source/test file). Regenerated the full T3-scale synthetic fixture end-to-end (`make_synthetic` →
+`extract` → `export_particle_sim`) against the candidate: 88 electrode instances, 32 TR instances,
+98 electrode masks, 4,743 classified pairs — matches the T3 checkpoint exactly, so the final
+synthetic output is unregressed. Ran the actual `particle-sim validate-input` CLI (from the
+sibling `~/git/particle-sim` checkout, read-only) against the regenerated `product.yaml`: `status:
+"ok"`, `shape_yx: [1200, 1200]`, `pixel_size_um: [0.1, 0.1]`, `unresolved_electrode_pairs: 0` —
+end-to-end validity of the exact candidate's output confirmed, not just unit tests.
+
+## Verdict
+
+Not an unconditional PASS. All three T4 Finding-1 bullets are fixed and independently verified
+(below); one new, narrower actionable gap remains (Finding 2) in the same silent-incompleteness
+class. Author must not self-approve; route Finding 2 to its author and re-review after any change.
+
+## T4 Finding 1 — verified fixed
+
+- **Silent incompleteness (renamed ACTIVE/OACTIVE)**: `_stack_layers`
+  (`particle_sim_adapter.py:17-131`) now branches on `layers[layer_id]["role"]`
+  (`by_role.setdefault(layers[layer_id]["role"], []).append(layer_id)` at line 30), not on literal
+  IDs. I reran the candidate's own `test_renamed_roles_and_non_top_metal_contact_endpoint`, which
+  renames `ACTIVE→ACT_A`, `OACTIVE→OACT_A`, `METAL1→MTL_TOP` and reproduces T4's exact repro
+  scenario: `ILD_ACTIVE_OACTIVE`/`ILD_OACTIVE_METAL` rows are still emitted, keyed on role. Passes.
+- **Unhandled `StopIteration` crash**: the old `next(...)` search for a literal `"METAL1"` row is
+  gone. Unresolvable/ambiguous stacks now raise `ManifestError` (e.g. `particle_sim_adapter.py:
+  24-26,34-38,40-43,49-52,58-62,69-72,104,128-130`), and `export_particle_sim` calls `_stack_layers`
+  (line 145) before `output.mkdir` (line 169), so no partial output is created on failure — verified
+  by reading the ordering and by the candidate's own
+  `test_ambiguous_role_stack_fails_before_creating_output` and
+  `test_unsupported_contact_endpoint_fails_before_creating_output`, both asserting
+  `not output.exists()` after the raise. `ManifestError` is a `ValueError` subclass caught by
+  `cli.py:68`'s existing `except (ManifestError, ResourceError, ReviewError, CircuitError,
+  OSError)` clause, confirmed by reading `cli.py`, so `export-particle-sim` now exits with a clean
+  diagnostic instead of a raw traceback.
+- **Comment/code mismatch (contact ordering)**: contacts are now queued by their declared `upper`
+  endpoint (`contact_by_upper.setdefault(upper, []).append(contact)` at line 73) and emitted
+  immediately before that exact conductor's row in the per-`layer_id` loop (lines 89-115), not
+  before a hardcoded `METAL1` search. The candidate's new test asserts this directly for a contact
+  whose `upper` is `MTL_MID`, a non-topmost conductor: `stack_order["ACT_A"] < stack_order["CNT1"]
+  < stack_order["MTL_MID"]` and `product["contacts"][0]["upper_layer"] == "MTL_MID"`. I reran it —
+  passes.
+
+## Finding 2 (actionable, narrower) — OACTIVE→METAL dielectric silently skipped for a `CONDUCTOR`-role top layer
+
+`src/layout_electrode_extractor/particle_sim_adapter.py:14,23,33,54-63`
+
+```python
+_CONDUCTOR_ROLES = {"GAT", "ACTIVE", "OACTIVE", "METAL", "CONDUCTOR"}   # line 14 — CONDUCTOR is an
+                                                                         # accepted stack role
+...
+        if layer_id not in layers or layers[layer_id].get("role") not in _CONDUCTOR_ROLES:  # 23
+...
+    metal_ids = by_role.get("METAL", [])   # line 33 — only the literal "METAL" role is collected
+...
+    if oactive_ids and metal_ids:          # line 54 — false whenever no layer anywhere in the
+                                            # stack has role "METAL", even if a role="CONDUCTOR"
+                                            # layer sits above OACTIVE and needs the same isolation
+        ...
+```
+
+`schema.py:18` (`_CONDUCTORS = {"GAT", "ACTIVE", "OACTIVE", "METAL", "CONDUCTOR"}`) and the
+adapter's own `_CONDUCTOR_ROLES` at line 14 both treat `METAL` and `CONDUCTOR` as equally valid,
+generic "conductor" stack roles — nothing in the schema or in the adapter's own admission check
+signals that only `METAL` gets ILD treatment above OACTIVE. But the `ILD_OACTIVE_METAL` placement
+logic (lines 54-63) only ever looks at `by_role.get("METAL", [])`. If a manifest's stack has an
+OACTIVE-role layer followed by a conductor role `CONDUCTOR` instead of `METAL` — a role
+`schema.py` and the adapter's own line 23 both accept for stack membership — `metal_ids` is empty,
+the `if oactive_ids and metal_ids:` guard is false, and the block is skipped entirely with **no
+error and no diagnostic**, silently omitting the `ILD_OACTIVE_METAL` dielectric row. This is the
+same "silent incompleteness" failure class as T4 Finding 1's first bullet, just triggered by role
+choice instead of ID naming; the explicit `ManifestError` at line 60 ("no METAL-role conductor
+follows OACTIVE") only fires when `METAL`-role layers exist elsewhere but not after OACTIVE — it
+does not fire when there are zero `METAL`-role layers in the whole stack, which is exactly the case
+this reproduces.
+
+**Reproduction** (against the exact `23f7196` candidate): take `make_synthetic()`'s manifest and
+change only `METAL1`'s `role` from `"METAL"` to `"CONDUCTOR"` (stack, contacts, and all layer IDs
+left unchanged — `CNT2`'s `upper` is still `METAL1`). `extract()` then `export_particle_sim()` both
+succeed; `product["stack"]` contains `ACTIVE`, `ILD_ACTIVE_OACTIVE`, `OACTIVE`, `CNT1`, `CNT2`,
+`METAL1` but **no** `ILD_OACTIVE_METAL` row, and no error or warning is raised or recorded anywhere
+in the output. I ran this exact repro via `.venv/bin/python3` against the candidate and confirmed
+the missing row and the absence of any diagnostic.
+
+**Scope**: narrower than T4 Finding 1 — it requires a manifest author to deliberately declare the
+isolating layer above OACTIVE with role `CONDUCTOR` rather than `METAL` (an available, schema-legal
+choice, not a naming accident), and `README.md`'s new adapter section already discloses that
+placement happens "before... the first METAL role above" OACTIVE, so the `METAL`-only scope is
+documented rather than fully hidden. Not exercised by either of the candidate's new tests, which
+both use `role: "METAL"` for the renamed top layer. Given T5's explicit charter was to make silent,
+undiagnosed incompleteness impossible for unsupported topology, recommend either treating `METAL`
+and `CONDUCTOR` alike for `ILD_OACTIVE_METAL` placement, or raising an explicit `ManifestError` when
+`oactive_ids` is non-empty but no conductor of any role follows it in stack order that the adapter
+is prepared to isolate, instead of silently proceeding. This finding is not itself grounds to
+re-open the three T4 Finding-1 bullets, which are independently verified fixed above.
+
+## Minor observation (not blocking)
+
+`export_particle_sim`'s `if conductors[-1] not in layers:` check at `particle_sim_adapter.py:146`
+is unreachable dead code: `_stack_layers` (called immediately before, line 145) already raises
+`ManifestError` for any `conductor_ids` entry — including the last one — that is not a key in
+`layers` (lines 22-26). Harmless, but worth deleting for clarity in a future pass.
+
+## What's left
+
+Finding 2 needs an author decision (treat `CONDUCTOR` like `METAL` for OACTIVE-side ILD placement,
+or raise an explicit diagnostic) and a re-review bound to the new SHA before this candidate can
+carry an unconditional PASS. The three T4 Finding-1 bullets are closed and need no further action.
