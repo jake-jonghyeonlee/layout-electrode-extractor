@@ -1,5 +1,13 @@
 # Orca checkpoint
 
+## RGB bus fixture review run, 2026-09-23
+
+- Run `run_5463d205f39d`; coordinator terminal `term_c02825c0-32ec-42d5-88d4-bfc014d70acf`.
+- Task `task_482e9d3662d6`, Dispatch `ctx_d270770317d8`, completed the synthetic generator update at commit `9f5942001dc8c50e66b6bb22e9c2be6d4696aa21`. The first overlay render needed revision after the user's visual review.
+- Task `task_ab35dedd439b`, Dispatch `ctx_292c9d96a3da`, reused the same Luna high terminal and completed the ignored artifact renderer correction. Both deliveries were acknowledged, the settled terminal was released through Orca, and no reclaimable workers remain.
+- Review artifacts: `outputs/rgb-bus-review-20260923/`. The corrected `extracted-overlay-1200.png` is composed from full-size electrode masks; `raw-composite-1200.png` and `raw-layer-sheet.png` provide raw layer views. `verification.json` records 600×600 source, 1200×1200 output, 0.1 µm/px, six TRs per unit, 24 TRs total, nine CNT instances per unit, one CNT on each R/G/B bus, and passing horizontal RGB and vertical ACTIVE seam checks.
+- Coordinator reopened both corrected 1200×1200 images and independently verified six distinct nonempty TR masks and nonempty GAT1, GAT2, ACTIVE, OACTIVE, and METAL1 pixels in each of the four quadrants. Full pytest and particle-sim integration remain for after the user's image review. No remote publication occurred. The unrelated untracked `docs/orca/FINAL-REPORT.ko.md` was preserved.
+
 - Run: `run_3cf905a17b81`; coordinator: `term_2b2539fe-3275-42de-8d69-008f8559c7d7`.
 - Base: `439372f5897ffcb9175a0d330f6990d12ff1d0b7` on `main`; repository initially clean.
 - T1 extraction and exact periodic connectivity: `task_b92fb0d783ae` (completed).
