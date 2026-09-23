@@ -46,6 +46,7 @@ class Contact:
     layer: str
     lower: str
     upper: str
+    holes: tuple[tuple[int, int], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -154,7 +155,7 @@ def load_manifest(path: str | Path) -> Manifest:
         raise ManifestError("contacts must be a list")
     contacts = []
     for index, row in enumerate(rows):
-        row = _keys(row, {"layer", "lower", "upper"}, set(), f"contacts[{index}]")
+        row = _keys(row, {"layer", "lower", "upper"}, {"holes"}, f"contacts[{index}]")
         layer, lower, upper = row["layer"], row["lower"], row["upper"]
         if any(not isinstance(value, str) for value in (layer, lower, upper)):
             raise ManifestError(f"contacts[{index}] endpoints must be layer IDs")
@@ -162,9 +163,23 @@ def load_manifest(path: str | Path) -> Manifest:
             raise ManifestError(f"contacts[{index}] has invalid layer/endpoints")
         if stack.index(lower) >= stack.index(upper):
             raise ManifestError(f"contacts[{index}] endpoints violate stack order")
-        if any(c.layer == layer for c in contacts):
-            raise ManifestError(f"duplicate contact rule for {layer}")
-        contacts.append(Contact(layer, lower, upper))
+        seeds = row.get("holes")
+        if "holes" in row:
+            if not isinstance(seeds, list) or not seeds:
+                raise ManifestError(f"contacts[{index}].holes must be a non-empty list")
+            for seed in seeds:
+                if (
+                    not isinstance(seed, list)
+                    or len(seed) != 2
+                    or any(type(value) is not int or value < 0 for value in seed)
+                ):
+                    raise ManifestError(f"contacts[{index}].holes must contain pixel [x,y] seeds")
+            seeds = tuple((x, y) for x, y in seeds)
+        if any(c.layer == layer for c in contacts) and (
+            seeds is None or any(c.layer == layer and c.holes is None for c in contacts)
+        ):
+            raise ManifestError(f"duplicate legacy contact rule for {layer}")
+        contacts.append(Contact(layer, lower, upper, seeds))
     if {i for i, role in roles.items() if role in _HOLES} != {c.layer for c in contacts}:
         raise ManifestError("every CNT/VIA layer needs exactly one contact rule")
     return Manifest(

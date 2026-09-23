@@ -149,6 +149,12 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
     conductors = list(meta["stack"])
     contacts = [row for row in meta["contact_rules"]]
     # Resolve unsupported or ambiguous topology before creating any output files.
+    contact_layers = [row["layer"] for row in contacts]
+    if len(contact_layers) != len(set(contact_layers)):
+        raise ManifestError(
+            "unsupported contact topology: particle-sim export requires one endpoint pair "
+            "per physical CNT/VIA layer; per-hole rules need separate validated masks"
+        )
     product_layers = _stack_layers(meta, layers, contacts)
     source_layer = conductors[-1]
     electrode_rows = []

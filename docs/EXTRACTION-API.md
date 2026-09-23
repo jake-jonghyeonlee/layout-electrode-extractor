@@ -29,8 +29,28 @@ invalid input or resource limits. CLI errors exit with status 2.
 
 `layers` lists all input images, including `OTHER` layers. Every conductor
 (`GAT`, `ACTIVE`, `OACTIVE`, `METAL`, `CONDUCTOR`) appears once in `stack`, in
-height order. Every `CNT` or `VIA` layer has one explicit contact rule whose
-lower and upper IDs are conductors in the stack. A TR pair names a `GAT` and
+height order. Every `CNT` or `VIA` layer has contact rules whose lower and upper
+IDs are conductors in the stack, in that order. A legacy layer has one rule
+without `holes`; it applies to every hole in that layer. To use more than one
+endpoint pair on one physical layer, every rule for that layer must have a
+non-empty `holes` list of `[x, y]` integer pixel seeds. For example:
+
+```json
+"contacts": [
+  {"layer": "CNT", "lower": "ACTIVE", "upper": "METAL1", "holes": [[12, 20]]},
+  {"layer": "CNT", "lower": "OACTIVE", "upper": "METAL1", "holes": [[45, 20]]}
+]
+```
+
+Each seed must be inside a raw hole component in the specified physical layer.
+Every within-unit raw component requires exactly one seed, even if that seed is
+subsequently removed by a TR cut; duplicate seeds on one component and
+unassigned components are errors. Thus, two fragments that join only across a
+periodic boundary each need a seed. All cut fragments of a raw component inherit
+its rule. Components joined across a periodic boundary must declare the same
+endpoint pair. An
+empty raw layer is valid with its single legacy rule; seeded rules require at
+least one actual raw hole. A TR pair names a `GAT` and
 an `ACTIVE` or `OACTIVE` layer. At least one TR pair is required; pairs may
 produce empty intersections. Overlapping intersections from separate source
 pairs are rejected.
@@ -83,6 +103,16 @@ than one independent lower or upper component is reported as
 `periodic_contact_network` reports a hole mask with an unbounded periodic
 component. Such cases remain extracted, but a strict one-to-one contact
 adapter must reject them. `orphan_contact` reports a contact-only electrode.
+`contact_holes.raw_components` records every assigned raw component, including
+those completely removed by TR. `contact_holes.components` maps every surviving
+unit cut component to its raw component, seed, rule index, and lower/upper
+endpoints. `contact_holes.instances`
+records each visible 2×2 periodic hole instance, its member cut components and
+tiles, and the resolved rule indices and pair. Contact issues include the pair
+and rule indices used for that instance. Review export carries this provenance.
+The particle-sim adapter rejects multiple rules on one physical CNT/VIA layer
+before creating output, because it cannot express mixed endpoint pairs with its
+current one-mask-per-contact-layer contract.
 
 ## Exact periodic rule and limits
 
