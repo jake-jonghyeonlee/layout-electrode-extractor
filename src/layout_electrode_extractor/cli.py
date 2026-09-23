@@ -8,10 +8,12 @@ import sys
 
 from .circuit import CircuitError
 from .engine import extract
+from .particle_sim_adapter import export_particle_sim
 from .periodic import ResourceError
 from .review import ReviewError, ReviewProject
 from .schema import ManifestError
 from .server import serve_review
+from .synthetic import make_synthetic
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,6 +32,15 @@ def main(argv: list[str] | None = None) -> int:
     export.add_argument("output")
     export.add_argument("--circuit")
     export.add_argument("--schematic")
+    synthetic = subparsers.add_parser(
+        "make-synthetic", help="write the reproducible assumed fixture"
+    )
+    synthetic.add_argument("output")
+    particle_export = subparsers.add_parser(
+        "export-particle-sim", help="export an extraction as particle-sim schema 2.0"
+    )
+    particle_export.add_argument("extraction")
+    particle_export.add_argument("output")
     args = parser.parse_args(argv)
     try:
         if args.command == "review":
@@ -44,6 +55,14 @@ def main(argv: list[str] | None = None) -> int:
             project = ReviewProject(args.extraction, args.circuit, args.schematic)
             output = project.export(args.output)
             print(json.dumps({"output": str(output)}, sort_keys=True))
+            return 0
+        if args.command == "make-synthetic":
+            result = make_synthetic(args.output)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == "export-particle-sim":
+            result = export_particle_sim(args.extraction, args.output)
+            print(json.dumps(result, sort_keys=True))
             return 0
         metadata = extract(args.manifest, args.output)
     except (ManifestError, ResourceError, ReviewError, CircuitError, OSError) as exc:
