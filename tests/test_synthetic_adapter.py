@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
+from scipy import ndimage
 
 from layout_electrode_extractor.engine import extract
 from layout_electrode_extractor.particle_sim_adapter import export_particle_sim
@@ -18,10 +21,15 @@ def test_synthetic_extract_and_particle_sim_export(tmp_path: Path) -> None:
     source = generated.parent
     manifest = json.loads(generated.read_text())
     assert manifest["pixel_size_um"] == 0.1
-    assert len(manifest["tr_pairs"]) == 2
+    assert manifest["tr_pairs"] == [
+        {"gat": "GAT1", "channel": "ACTIVE"},
+        {"gat": "GAT2", "channel": "OACTIVE"},
+        {"gat": "GAT3", "channel": "OACTIVE"},
+    ]
     assert {row["id"] for row in manifest["layers"]} == {
         "GAT1",
         "GAT2",
+        "GAT3",
         "ACTIVE",
         "OACTIVE",
         "CNT1",
@@ -34,6 +42,9 @@ def test_synthetic_extract_and_particle_sim_export(tmp_path: Path) -> None:
     extracted = tmp_path / "extracted"
     result = extract(generated, extracted)
     assert result["output_shape_px"] == [1200, 1200]
+    assert result["pixel_size_um"] == 0.1
+    assert len(result["tr"]) == 40
+    assert result["issues"] == []
     assert result["electrodes"]
     assert result["tr"]
 
@@ -71,6 +82,95 @@ def test_synthetic_extract_and_particle_sim_export(tmp_path: Path) -> None:
         with Image.open(adapted / contact["path"]) as image:
             assert image.size == (1200, 1200)
     assert (adapted / "adapter-provenance.json").is_file()
+
+
+def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
+    manifest = Path(make_synthetic(tmp_path / "source")["manifest"])
+    source = manifest.parent
+    raw = {
+        name: np.asarray(Image.open(source / "masks" / f"{name}.png")) > 0
+        for name in ("GAT1", "GAT2", "GAT3", "ACTIVE", "OACTIVE", "CNT1", "CNT2", "METAL1")
+    }
+    expected = {"GAT1_ACTIVE": 4, "GAT2_OACTIVE": 2, "GAT3_OACTIVE": 4}
+    overlaps = {}
+    tr_union = np.zeros((600, 600), dtype=bool)
+    for gate in ("GAT1", "GAT2", "GAT3"):
+        for channel in ("ACTIVE", "OACTIVE"):
+            selected = raw[gate] & raw[channel]
+            key = f"{gate}_{channel}"
+            overlaps[key] = ndimage.label(selected)[1]
+            assert not np.any(tr_union & selected), key
+            tr_union |= selected
+    assert {key: count for key, count in overlaps.items() if count} == expected
+    assert ndimage.label(raw["GAT1"])[1] == 2  # R and B are separate wires.
+    assert ndimage.label(raw["GAT2"])[1] == 1  # G is a third periodic bus.
+    assert np.array_equal(raw["GAT1"][:, 0], raw["GAT1"][:, -1])
+    assert np.array_equal(raw["GAT2"][:, 0], raw["GAT2"][:, -1])
+
+    extracted = tmp_path / "extracted"
+    result = extract(manifest, extracted)
+    assert len(result["tr"]) == 40
+    assert not result["issues"]
+    quadrant_pairs = {(x, y): Counter() for y in range(2) for x in range(2)}
+    for item in result["tr"]:
+        tr_mask = np.asarray(Image.open(extracted / item["path"])) > 0
+        pair = f"{item['source_pair']['gat']}_{item['source_pair']['channel']}"
+        touched = [
+            (x, y)
+            for y in range(2)
+            for x in range(2)
+            if np.any(tr_mask[y * 600 : (y + 1) * 600, x * 600 : (x + 1) * 600])
+        ]
+        assert len(touched) == 1
+        quadrant_pairs[touched[0]][pair] += 1
+    assert all(dict(pairs) == expected for pairs in quadrant_pairs.values())
+    for name, value in raw.items():
+        cut = np.asarray(Image.open(extracted / "cut_layers" / f"{name}.png")) > 0
+        assert np.array_equal(cut, value & ~tr_union), name
+    for hole, lower, count in (("CNT1", "ACTIVE", 9), ("CNT2", "OACTIVE", 11)):
+        raw_labels, raw_count = ndimage.label(raw[hole])
+        cut_hole = np.asarray(Image.open(extracted / "cut_layers" / f"{hole}.png")) > 0
+        cut_labels, cut_count = ndimage.label(cut_hole)
+        cut_lower = np.asarray(Image.open(extracted / "cut_layers" / f"{lower}.png")) > 0
+        cut_upper = np.asarray(Image.open(extracted / "cut_layers" / "METAL1.png")) > 0
+        undeclared = {"GAT1", "GAT2", "GAT3", "ACTIVE", "OACTIVE"} - {lower}
+        assert raw_count == cut_count == count
+        assert np.array_equal(raw_labels > 0, cut_labels > 0)
+        for index in range(1, count + 1):
+            component = cut_labels == index
+            assert np.any(component & cut_lower)
+            assert np.any(component & cut_upper)
+            assert np.any(component & raw[lower])
+            assert np.any(component & raw["METAL1"])
+            assert all(not np.any(component & raw[name]) for name in undeclared)
+    assert sum(ndimage.label(raw[name])[1] for name in ("CNT1", "CNT2")) == 20
+
+    # The output keeps individual periodic bus identities while joining each seam.
+    bus_ids = {}
+    for name, layer, y in (("R", "GAT1", 100), ("G", "GAT2", 200), ("B", "GAT1", 300)):
+        hits = [
+            row["id"]
+            for row in result["electrodes"]
+            if layer in row["layers"]
+            and np.asarray(Image.open(extracted / row["layers"][layer]["path"]))[y, 599]
+        ]
+        assert len(hits) == 1, name
+        bus_ids[name] = hits[0]
+        output_bus = (
+            np.asarray(
+                Image.open(
+                    extracted
+                    / next(
+                        row["layers"][layer]["path"]
+                        for row in result["electrodes"]
+                        if row["id"] == hits[0]
+                    )
+                )
+            )
+            > 0
+        )
+        assert output_bus[y, 599] and output_bus[y, 600], name
+    assert len(set(bus_ids.values())) == 3
 
 
 def _renamed_manifest(path: Path, *, add_ambiguous_active: bool = False) -> Path:
