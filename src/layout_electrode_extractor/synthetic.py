@@ -1,4 +1,4 @@
-"""Reproducible, explicitly assumed 600 px unit layout fixture."""
+"""Reproducible, explicitly assumed RGB-node 600 px unit layout fixture."""
 
 from __future__ import annotations
 
@@ -13,8 +13,12 @@ def _line(draw: ImageDraw.ImageDraw, points: list[tuple[int, int]], width: int =
     draw.line(points, fill=255, width=width, joint="curve")
 
 
+def _via(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
+    draw.rectangle((x - 7, y - 7, x + 7, y + 7), fill=255)
+
+
 def make_synthetic(output_dir: str | Path) -> dict:
-    """Write a 600x600, 0.1 um/px synthetic stack input and extractor manifest."""
+    """Write a 600x600, 0.1 um/px assumed RGB-node stack and manifest."""
     root = Path(output_dir).resolve()
     root.mkdir(parents=True, exist_ok=False)
     masks = root / "masks"
@@ -32,64 +36,46 @@ def make_synthetic(output_dir: str | Path) -> dict:
         image = Image.new("L", (600, 600), 0)
         draw = ImageDraw.Draw(image)
         if layer == "GAT1":
-            _line(draw, [(150, 0), (150, 100), (190, 150), (190, 290), (150, 340), (150, 599)])
-            _line(draw, [(410, 0), (410, 599)])
-            _line(draw, [(0, 80), (80, 80), (100, 60)])
+            # Two local gates cross the red and green ACTIVE node channels.
+            _line(draw, [(70, 285), (70, 315)])
+            _line(draw, [(130, 285), (130, 315)])
+            _line(draw, [(270, 365), (270, 395)])
+            _line(draw, [(330, 365), (330, 395)])
         elif layer == "GAT2":
-            _line(draw, [(300, 0), (300, 599)])
-            _line(draw, [(520, 0), (520, 599)])
+            # Two local gates cross the blue OACTIVE node channel.
+            _line(draw, [(470, 455), (470, 485)])
+            _line(draw, [(530, 455), (530, 485)])
         elif layer == "ACTIVE":
-            _line(
-                draw,
-                [
-                    (0, 210),
-                    (70, 210),
-                    (120, 190),
-                    (210, 190),
-                    (260, 230),
-                    (350, 230),
-                    (400, 200),
-                    (530, 200),
-                    (599, 220),
-                ],
-            )
-            _line(draw, [(120, 190), (120, 130), (170, 100)])
-            _line(draw, [(350, 230), (350, 290), (300, 320), (220, 320), (190, 290)])
-            _line(draw, [(500, 200), (540, 160), (580, 160)])
-            draw.ellipse((30, 400, 70, 440), fill=255)  # independent island
+            # RGB branches each join one corresponding periodic METAL bus.
+            _line(draw, [(100, 70), (100, 300), (40, 300), (160, 300)])
+            _line(draw, [(300, 120), (300, 380), (240, 380), (360, 380)])
+            # Separate full-height edge wire makes vertical seam behavior visible.
+            _line(draw, [(20, 0), (20, 599)])
+            _line(draw, [(580, 0), (580, 599)])
         elif layer == "OACTIVE":
-            _line(
-                draw,
-                [
-                    (0, 410),
-                    (90, 410),
-                    (140, 450),
-                    (260, 450),
-                    (300, 420),
-                    (390, 420),
-                    (450, 390),
-                    (599, 390),
-                ],
-            )
-            _line(draw, [(260, 450), (260, 510), (220, 540), (160, 540), (130, 510), (130, 450)])
-            _line(draw, [(450, 390), (500, 340), (570, 340)])
-            draw.ellipse((500, 500, 540, 540), fill=255)
+            _line(draw, [(500, 170), (500, 470), (430, 470), (560, 470)])
         elif layer == "METAL1":
-            _line(draw, [(60, 210), (540, 210)])
-            _line(draw, [(80, 410), (520, 410)])
-            _line(draw, [(180, 450), (220, 450)])
-            # Independent conductor island and a cross-boundary winding trace.
-            draw.rectangle((250, 70, 310, 85), fill=255)
-            _line(draw, [(570, 520), (599, 520), (0, 520), (30, 500), (50, 480)])
+            # Three distinct horizontal buses; clipped endpoint pixels match at
+            # left/right edges so repeating tiles join without a seam gap.
+            _line(draw, [(0, 70), (599, 70)])   # R
+            _line(draw, [(0, 120), (599, 120)])  # G
+            _line(draw, [(0, 170), (599, 170)])  # B
+            # Isolated source/drain landing pads on the opposite ends of nodes.
+            for x, y in ((40, 300), (160, 300), (240, 380), (360, 380), (430, 470), (560, 470)):
+                draw.rectangle((x - 16, y - 16, x + 16, y + 16), fill=255)
         elif layer == "CNT1":
-            for x, y in ((120, 210), (480, 210)):
-                draw.rectangle((x - 7, y - 7, x + 7, y + 7), fill=255)
+            # Exactly one red and one green RGB bus via per unit, plus S/D vias.
+            for x, y in ((100, 70), (300, 120), (40, 300), (160, 300), (240, 380), (360, 380)):
+                _via(draw, x, y)
         elif layer == "CNT2":
-            for x, y in ((200, 450), (400, 410)):
-                draw.rectangle((x - 7, y - 7, x + 7, y + 7), fill=255)
+            # Exactly one blue RGB bus via per unit, plus S/D vias.
+            for x, y in ((500, 170), (430, 470), (560, 470)):
+                _via(draw, x, y)
         layers[layer] = (role, np.asarray(image, dtype=np.uint8))
+
     for layer, (_, pixels) in layers.items():
         Image.fromarray(pixels, mode="L").save(masks / f"{layer}.png")
+
     manifest = {
         "schema_version": 1,
         "pixel_size_um": 0.1,
