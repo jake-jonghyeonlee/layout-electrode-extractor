@@ -36,15 +36,18 @@ def make_synthetic(output_dir: str | Path) -> dict:
         image = Image.new("L", (600, 600), 0)
         draw = ImageDraw.Draw(image)
         if layer == "GAT1":
-            # Two local gates cross the red and green ACTIVE node channels.
-            _line(draw, [(70, 285), (70, 315)])
-            _line(draw, [(130, 285), (130, 315)])
-            _line(draw, [(270, 365), (270, 395)])
-            _line(draw, [(330, 365), (330, 395)])
+            # Four separate, longer gate wires cross the R and G node paths.
+            for x, y0, y1 in (
+                (70, 240, 360),
+                (130, 240, 360),
+                (270, 320, 440),
+                (330, 320, 440),
+            ):
+                _line(draw, [(x, y0), (x, y1)])
         elif layer == "GAT2":
-            # Two local gates cross the blue OACTIVE node channel.
-            _line(draw, [(470, 455), (470, 485)])
-            _line(draw, [(530, 455), (530, 485)])
+            # Two separate, longer gate wires cross the blue OACTIVE path.
+            _line(draw, [(470, 410), (470, 530)])
+            _line(draw, [(530, 410), (530, 530)])
         elif layer == "ACTIVE":
             # RGB branches each join one corresponding periodic METAL bus.
             _line(draw, [(100, 70), (100, 300), (40, 300), (160, 300)])
