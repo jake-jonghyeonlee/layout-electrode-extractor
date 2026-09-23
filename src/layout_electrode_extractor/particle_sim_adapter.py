@@ -30,7 +30,9 @@ def _stack_layers(meta: dict, layers: dict[str, dict], contacts: list[dict]) -> 
         by_role.setdefault(layers[layer_id]["role"], []).append(layer_id)
     active_ids = by_role.get("ACTIVE", [])
     oactive_ids = by_role.get("OACTIVE", [])
-    metal_ids = by_role.get("METAL", [])
+    upper_conductor_ids = [
+        layer_id for layer_id in conductor_ids if layers[layer_id]["role"] in {"METAL", "CONDUCTOR"}
+    ]
     if active_ids and len(active_ids) != 1:
         raise ManifestError(
             "unsupported assumed stack: multiple ACTIVE-role layers make the ACTIVE/OACTIVE "
@@ -51,16 +53,21 @@ def _stack_layers(meta: dict, layers: dict[str, dict], contacts: list[dict]) -> 
                 "unsupported assumed stack: ACTIVE role must precede OACTIVE role for ILD placement"
             )
         before.setdefault(oactive, []).append(("ILD_ACTIVE_OACTIVE", 0.2, 0.5))
-    if oactive_ids and metal_ids:
+    if oactive_ids and upper_conductor_ids:
         later_metals = [
-            layer_id for layer_id in metal_ids if order[layer_id] > order[oactive_ids[0]]
+            layer_id for layer_id in upper_conductor_ids if order[layer_id] > order[oactive_ids[0]]
         ]
         if not later_metals:
             raise ManifestError(
-                "unsupported assumed stack: no METAL-role conductor follows OACTIVE for "
-                "ILD placement"
+                "unsupported assumed stack: no METAL- or CONDUCTOR-role conductor follows "
+                "OACTIVE for ILD placement"
             )
         before.setdefault(later_metals[0], []).append(("ILD_OACTIVE_METAL", 0.2, 0.5))
+    elif oactive_ids:
+        raise ManifestError(
+            "unsupported assumed stack: OACTIVE role has no upper METAL or CONDUCTOR role "
+            "for ILD placement"
+        )
 
     contact_by_upper: dict[str, list[dict]] = {}
     for contact in contacts:
@@ -143,8 +150,6 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
     contacts = [row for row in meta["contact_rules"]]
     # Resolve unsupported or ambiguous topology before creating any output files.
     product_layers = _stack_layers(meta, layers, contacts)
-    if conductors[-1] not in layers:
-        raise ManifestError("particle-sim export requires a real top conductor for source landing")
     source_layer = conductors[-1]
     electrode_rows = []
     electrode_masks: dict[str, Path] = {}

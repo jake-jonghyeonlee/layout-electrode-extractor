@@ -121,6 +121,24 @@ def test_renamed_roles_and_non_top_metal_contact_endpoint(tmp_path: Path) -> Non
     assert product["particle_source_steps"][0]["lands_after_layer"] == "MTL_TOP"
 
 
+def test_conductor_role_above_oactive_gets_assumed_ild(tmp_path: Path) -> None:
+    manifest_path = Path(make_synthetic(tmp_path / "conductor-role-input")["manifest"])
+    manifest = json.loads(manifest_path.read_text())
+    for layer in manifest["layers"]:
+        if layer["id"] == "METAL1":
+            layer["role"] = "CONDUCTOR"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    extraction = tmp_path / "conductor-role-extraction"
+    extract(manifest_path, extraction)
+
+    output = tmp_path / "conductor-role-particle-sim"
+    export_particle_sim(extraction, output)
+    product = json.loads((output / "product.yaml").read_text())
+    stack_order = {layer["layer_name"]: layer["process_order"] for layer in product["stack"]}
+    assert stack_order["OACTIVE"] < stack_order["ILD_OACTIVE_METAL"] < stack_order["METAL1"]
+    assert product["particle_source_steps"][0]["lands_after_layer"] == "METAL1"
+
+
 def test_ambiguous_role_stack_fails_before_creating_output(tmp_path: Path) -> None:
     input_manifest = _renamed_manifest(tmp_path / "ambiguous-input", add_ambiguous_active=True)
     extraction = tmp_path / "ambiguous-extraction"

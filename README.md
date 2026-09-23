@@ -62,8 +62,9 @@ runs, and do not interpret such a smoke as validation of all pairs or of physica
 
 Adapter stack placement uses semantic `role` values, not layer IDs, so names such as `ACT_A`,
 `OACT_A`, and `MTL_TOP` work. The assumed ILD rows are placed before the OACTIVE role and the
-first METAL role above it, while each contact marker is placed immediately before its declared
-upper endpoint. The particle source step lands after the last conductor in the declared stack.
+first METAL- or CONDUCTOR-role layer above it, while each contact marker is placed immediately
+before its declared upper endpoint. The particle source step lands after the last conductor in
+the declared stack.
 If ACTIVE/OACTIVE roles make assumed dielectric placement ambiguous, or a contact's endpoints
 cannot be placed in source-stack order, export raises a `ManifestError` before creating output.
 These assumed dielectric locations and thicknesses remain illustrative process settings, not
