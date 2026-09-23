@@ -15,8 +15,10 @@ from layout_electrode_extractor.particle_sim_adapter import export_particle_sim
 from layout_electrode_extractor.review import ReviewProject
 from layout_electrode_extractor.schema import ManifestError
 from layout_electrode_extractor.synthetic import (
+    ACTIVE_GAT_METAL_BRIDGES,
     ACTIVE_METAL_LANDINGS,
-    GAT_ACTIVE_LANDINGS,
+    BRIDGE_ACTIVE_LANDINGS,
+    BRIDGE_GAT_LANDINGS,
     GAT_METAL_LANDINGS,
     make_synthetic,
 )
@@ -27,7 +29,7 @@ def _legacy_adapter_input(root: Path) -> Path:
     path = Path(make_synthetic(root)["manifest"])
     cnt_path = root / "masks" / "CNT1.png"
     cnt = np.asarray(Image.open(cnt_path)).copy()
-    for x, y in GAT_ACTIVE_LANDINGS + GAT_METAL_LANDINGS:
+    for x, y in BRIDGE_ACTIVE_LANDINGS + BRIDGE_GAT_LANDINGS + GAT_METAL_LANDINGS:
         cnt[y - 7 : y + 8, x - 7 : x + 8] = 0
     Image.fromarray(cnt).save(cnt_path)
     manifest = json.loads(path.read_text())
@@ -44,6 +46,17 @@ def test_legacy_contact_fixture_extract_and_particle_sim_export(tmp_path: Path) 
     source = generated.parent
     manifest = json.loads(generated.read_text())
     assert manifest["pixel_size_um"] == 0.1
+    assert manifest["stack"] == ["ACTIVE", "GAT1", "GAT2", "OACTIVE", "GAT3", "METAL1"]
+    assert manifest["physical_stack"] == [
+        "ACTIVE",
+        "GAT1",
+        "GAT2",
+        "OACTIVE",
+        "GAT3",
+        "CNT1",
+        "CNT2",
+        "METAL1",
+    ]
     assert manifest["tr_pairs"] == [
         {"gat": "GAT1", "channel": "ACTIVE"},
         {"gat": "GAT2", "channel": "OACTIVE"},
@@ -68,6 +81,7 @@ def test_legacy_contact_fixture_extract_and_particle_sim_export(tmp_path: Path) 
     assert result["pixel_size_um"] == 0.1
     assert len(result["tr"]) == 40
     assert result["issues"] == []
+    assert result["physical_stack"] == manifest["physical_stack"]
     assert result["electrodes"]
     assert result["tr"]
 
@@ -79,6 +93,10 @@ def test_legacy_contact_fixture_extract_and_particle_sim_export(tmp_path: Path) 
     annotations["tr"][first_tr] = {"name": "ANCHOR_TR", "device_id": ""}
     project.save_annotations(annotations, project.revision)
     reviewed = project.export(tmp_path / "reviewed")
+    assert (
+        json.loads((reviewed / "manifest.json").read_text())["physical_stack"]
+        == manifest["physical_stack"]
+    )
 
     adapted = tmp_path / "particle-sim"
     report = export_particle_sim(reviewed, adapted)
@@ -129,6 +147,10 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
         name: np.asarray(Image.open(source / "masks" / f"{name}.png")) > 0
         for name in ("GAT1", "GAT2", "GAT3", "ACTIVE", "OACTIVE", "CNT1", "CNT2", "METAL1")
     }
+    assert all(mask.shape == (600, 600) for mask in raw.values())
+    assert np.count_nonzero(raw["GAT1"][:, 300]) == 40  # Two 20 px horizontal buses.
+    assert np.count_nonzero(raw["GAT2"][:, 300]) == 20
+    assert np.count_nonzero(raw["METAL1"][570, :]) == 40  # Two 20 px vertical trunks.
     expected = {"GAT1_ACTIVE": 4, "GAT2_OACTIVE": 2, "GAT3_OACTIVE": 4}
     overlaps = {}
     tr_union = np.zeros((600, 600), dtype=bool)
@@ -141,8 +163,8 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
         assert not np.any(tr_union & selected), key
         tr_union |= selected
     assert overlaps == expected
-    # GAT2-ACTIVE overlaps are declared contact landings, not a TR source pair.
-    assert ndimage.label(raw["GAT2"] & raw["ACTIVE"])[1] == 2
+    assert not np.any(raw["GAT2"] & raw["ACTIVE"])
+    assert not np.any(raw["CNT1"] & raw["CNT2"])
     assert ndimage.label(raw["GAT1"])[1] == 2  # R and B are separate wires.
     assert ndimage.label(raw["GAT2"])[1] == 1  # G is a third periodic bus.
     assert np.array_equal(raw["GAT1"][:, 0], raw["GAT1"][:, -1])
@@ -150,8 +172,23 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
 
     extracted = tmp_path / "extracted"
     result = extract(manifest, extracted)
+    assert result["output_shape_px"] == [1200, 1200]
+    assert result["pixel_size_um"] == 0.1
+    assert result["output_size_um"] == [120.0, 120.0]
     assert len(result["tr"]) == 40
     assert not result["issues"]
+    assert result["stack"] == ["ACTIVE", "GAT1", "GAT2", "OACTIVE", "GAT3", "METAL1"]
+    assert result["physical_stack"] == [
+        "ACTIVE",
+        "GAT1",
+        "GAT2",
+        "OACTIVE",
+        "GAT3",
+        "CNT1",
+        "CNT2",
+        "METAL1",
+    ]
+    assert not np.any(raw["METAL1"] & tr_union)
     quadrant_pairs = {(x, y): Counter() for y in range(2) for x in range(2)}
     for item in result["tr"]:
         tr_mask = np.asarray(Image.open(extracted / item["path"])) > 0
@@ -173,22 +210,23 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
     for row in rows:
         rule = rules[row["contact_rule_index"]]
         assert (rule["layer"], rule["lower"], rule["upper"]) == (
-            row["layer"], row["lower"], row["upper"]
+            row["layer"],
+            row["lower"],
+            row["upper"],
         )
         if "holes" in rule:
             assert row["seed"] in rule["holes"]
         else:
             assert row["seed"] is None
     assert Counter((row["layer"], row["lower"], row["upper"]) for row in rows) == {
-        ("CNT1", "GAT2", "ACTIVE"): 2,
-        ("CNT1", "ACTIVE", "METAL1"): 9,
-        ("CNT1", "GAT2", "METAL1"): 1,
+        ("CNT1", "ACTIVE", "METAL1"): 11,
+        ("CNT1", "GAT2", "METAL1"): 3,
         ("CNT2", "OACTIVE", "METAL1"): 11,
     }
     assert {tuple(row["seed"]) for row in rows if row["layer"] == "CNT1"} == set(
-        ACTIVE_METAL_LANDINGS + GAT_ACTIVE_LANDINGS + GAT_METAL_LANDINGS
+        ACTIVE_METAL_LANDINGS + BRIDGE_ACTIVE_LANDINGS + BRIDGE_GAT_LANDINGS + GAT_METAL_LANDINGS
     )
-    for hole, count in (("CNT1", 12), ("CNT2", 11)):
+    for hole, count in (("CNT1", 14), ("CNT2", 11)):
         raw_labels, raw_count = ndimage.label(raw[hole])
         cut_hole = np.asarray(Image.open(extracted / "cut_layers" / f"{hole}.png")) > 0
         cut_labels, cut_count = ndimage.label(cut_hole)
@@ -202,14 +240,23 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
             component = cut_labels == index
             endpoints = {row["lower"], row["upper"]}
             for endpoint in endpoints:
-                cut_endpoint = np.asarray(
-                    Image.open(extracted / "cut_layers" / f"{endpoint}.png")
-                ) > 0
-                assert np.any(component & cut_endpoint), (hole, index, endpoint)
+                cut_endpoint = (
+                    np.asarray(Image.open(extracted / "cut_layers" / f"{endpoint}.png")) > 0
+                )
+                overlap = np.count_nonzero(component & cut_endpoint)
+                raw_overlap = np.count_nonzero(component & raw[endpoint])
+                if tuple(row["seed"] or ()) in BRIDGE_ACTIVE_LANDINGS + BRIDGE_GAT_LANDINGS:
+                    assert overlap == raw_overlap == np.count_nonzero(component), (
+                        hole,
+                        index,
+                        endpoint,
+                    )
+                else:
+                    assert overlap > 0 and raw_overlap > 0, (hole, index, endpoint)
             undeclared = {"GAT1", "GAT2", "GAT3", "ACTIVE", "OACTIVE", "METAL1"} - endpoints
             assert all(not np.any(component & raw[name]) for name in undeclared)
-    assert len(result["contact_holes"]["components"]) == 23
-    assert sum(ndimage.label(raw[name])[1] for name in ("CNT1", "CNT2")) == 23
+    assert len(result["contact_holes"]["components"]) == 25
+    assert sum(ndimage.label(raw[name])[1] for name in ("CNT1", "CNT2")) == 25
     graph = json.loads((extracted / "connectivity.json").read_text())
     direct_component = int(ndimage.label(raw["CNT1"])[0][200, 40])
     direct_node = ["CNT1", direct_component]
@@ -219,27 +266,55 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
         if edge["from"] == direct_node or edge["to"] == direct_node
     }
     assert {layer for layer, _ in direct_neighbors} == {"GAT2", "METAL1"}
-    route_points = (
-        ("METAL1", 40, 145), ("CNT1", 100, 145), ("ACTIVE", 100, 145),
-        ("CNT1", 100, 120), ("GAT2", 125, 160),
-        ("CNT1", 180, 325), ("ACTIVE", 180, 325),
-    )
-    route_labels = {
-        layer: ndimage.label(
-            np.asarray(Image.open(extracted / "cut_layers" / f"{layer}.png")) > 0
-        )[0]
-        for layer in {point[0] for point in route_points}
+    cut_labels = {
+        layer: ndimage.label(np.asarray(Image.open(extracted / "cut_layers" / f"{layer}.png")) > 0)[
+            0
+        ]
+        for layer in ("ACTIVE", "GAT2", "METAL1", "CNT1")
     }
-    route_nodes = [(layer, int(route_labels[layer][y, x])) for layer, x, y in route_points]
-    assert all(component for _, component in route_nodes)
     edges = {
         frozenset((tuple(edge["from"]), tuple(edge["to"])))
-        for edge in graph["edges"] if edge["displacement"] == [0, 0]
+        for edge in graph["edges"]
+        if edge["displacement"] == [0, 0]
     }
-    assert all(
-        frozenset((first, second)) in edges
-        for first, second in pairwise(route_nodes)
-    )
+
+    bridge_rows = []
+    for active_point, gat_point in ACTIVE_GAT_METAL_BRIDGES:
+        ax, ay = active_point
+        gx, gy = gat_point
+        active_hole = next(row for row in rows if row["seed"] == [ax, ay])
+        gat_hole = next(row for row in rows if row["seed"] == [gx, gy])
+        assert active_hole["layer"] == gat_hole["layer"] == "CNT1"
+        assert (active_hole["lower"], active_hole["upper"]) == ("ACTIVE", "METAL1")
+        assert (gat_hole["lower"], gat_hole["upper"]) == ("GAT2", "METAL1")
+        assert active_hole["raw_component"] != gat_hole["raw_component"]
+        metal_component = int(cut_labels["METAL1"][ay, ax])
+        assert metal_component and cut_labels["METAL1"][gy, gx] == metal_component
+        # Every center pixel along the drawn L is retained in one cut metal component.
+        assert np.all(cut_labels["METAL1"][ay, min(ax, gx) : max(ax, gx) + 1] == metal_component)
+        assert np.all(cut_labels["METAL1"][min(ay, gy) : max(ay, gy) + 1, gx] == metal_component)
+        route_nodes = [
+            ("ACTIVE", int(cut_labels["ACTIVE"][ay, ax])),
+            ("CNT1", active_hole["raw_component"]),
+            ("METAL1", metal_component),
+            ("CNT1", gat_hole["raw_component"]),
+            ("GAT2", int(cut_labels["GAT2"][gy, gx])),
+        ]
+        assert all(component for _, component in route_nodes)
+        assert all(frozenset((first, second)) in edges for first, second in pairwise(route_nodes))
+        for hole_node, expected_neighbors in (
+            (route_nodes[1], {route_nodes[0], route_nodes[2]}),
+            (route_nodes[3], {route_nodes[2], route_nodes[4]}),
+        ):
+            actual_neighbors = {
+                tuple(edge["to"] if edge["from"] == list(hole_node) else edge["from"])
+                for edge in graph["edges"]
+                if edge["from"] == list(hole_node) or edge["to"] == list(hole_node)
+            }
+            assert actual_neighbors == expected_neighbors
+        bridge_rows.append(route_nodes)
+    assert len(bridge_rows) == 2
+    assert bridge_rows[0][2] != bridge_rows[1][2]
 
     def owner(layer: str, x: int, y: int) -> str:
         hits = [
@@ -256,8 +331,7 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
     assert active_components[145, 100] != active_components[325, 180]
     assert active_components[145, 100] and active_components[325, 180]
 
-    # Real graph identity: direct METAL/GAT and the longer METAL -> ACTIVE -> GAT
-    # -> distinct ACTIVE path both use CNT1 and never a TR intersection.
+    # Both two-hole bridges join distinct cut ACTIVE fragments to the GAT2 bus.
     routed = {
         owner(layer, x, y)
         for layer, x, y in (
@@ -265,8 +339,11 @@ def test_synthetic_crossings_contacts_and_rgb_seams(tmp_path: Path) -> None:
             ("CNT1", 100, 145),
             ("ACTIVE", 100, 145),
             ("CNT1", 100, 120),
-            ("GAT2", 125, 160),
+            ("METAL1", 150, 160),
+            ("CNT1", 150, 200),
             ("GAT2", 200, 200),
+            ("CNT1", 215, 200),
+            ("METAL1", 215, 260),
             ("CNT1", 180, 325),
             ("ACTIVE", 180, 325),
             ("METAL1", 40, 200),
@@ -352,6 +429,7 @@ def _renamed_manifest(path: Path, *, add_ambiguous_active: bool = False) -> Path
     for layer in manifest["layers"]:
         layer["id"] = renames.get(layer["id"], layer["id"])
     manifest["stack"] = [renames.get(layer, layer) for layer in manifest["stack"]]
+    manifest["physical_stack"] = [renames.get(layer, layer) for layer in manifest["physical_stack"]]
     manifest["tr_pairs"] = [
         {
             "gat": pair["gat"],
@@ -365,11 +443,13 @@ def _renamed_manifest(path: Path, *, add_ambiguous_active: bool = False) -> Path
         if contact["layer"] == "CNT1":
             contact["upper"] = "MTL_MID"
     manifest["stack"].insert(manifest["stack"].index("MTL_TOP"), "MTL_MID")
+    manifest["physical_stack"].insert(manifest["physical_stack"].index("MTL_TOP"), "MTL_MID")
     manifest["layers"].append({"id": "MTL_MID", "path": "masks/MTL_MID.png", "role": "METAL"})
     Image.open(path / "masks" / "METAL1.png").save(path / "masks" / "MTL_MID.png")
     if add_ambiguous_active:
         manifest["layers"].append({"id": "ACT_B", "path": "masks/ACT_B.png", "role": "ACTIVE"})
         manifest["stack"].insert(manifest["stack"].index("OACT_A"), "ACT_B")
+        manifest["physical_stack"].insert(manifest["physical_stack"].index("OACT_A"), "ACT_B")
         Image.open(path / "masks" / "ACTIVE.png").save(path / "masks" / "ACT_B.png")
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest_path

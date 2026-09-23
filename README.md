@@ -28,23 +28,29 @@ terminal, or after stopping the review server, export the reviewed folders:
 The generator writes a 600×600 px unit at 0.1 µm/px with approximately 20 px (2 µm) wires,
 three GAT layers, ACTIVE, OACTIVE, two contact layers, and METAL1. Two distinct horizontal
 GAT1 buses represent R and B, while a GAT2 bus represents G. Vertical channels make ten
-orthogonal declared gate crossings per unit; the 2×2 extraction contains 40 TRs. CNT1 is one
-physical mask with three explicitly seeded endpoint pairs: nine ACTIVE–METAL1, two
-GAT2–ACTIVE, and one direct GAT2–METAL1 hole per unit. Eleven CNT2 holes join
-OACTIVE–METAL1. METAL1 pads are local landings plus two separate 20 px vertical
-trunks that reach both unit edges. The left trunk joins
-the CNT1 pad at ACTIVE (100,145) and GAT2 at (40,200); the right trunk joins the CNT2 pads
-at OACTIVE (460,235) and (460,540). The GAT2 stubs join that upper ACTIVE fragment through
-CNT1 (100,120) to a distinct lower ACTIVE fragment through CNT1 (180,325). This makes a
-METAL1 → ACTIVE → GAT2 → ACTIVE path, as well as the direct METAL1 → GAT2 contact and
-independent direct METAL1 → ACTIVE/OACTIVE examples. Other pads are not directly joined by
-branch metal. TR intersections are removed from every layer and never act as contacts.
-The GAT2–ACTIVE overlaps are contact landings, outside the declared TR pairs.
-These contact endpoints and process geometry are fixture assumptions, not
-measured or calibrated process data.
-Review images, per-hole labels, exact pair/contact counts, and regeneration notes are in the
-ignored `outputs/rgb-contact-routing-20260924/` directory. Earlier accepted review directories are
-preserved.
+orthogonal declared gate crossings per unit: 4 GAT1/ACTIVE, 2 GAT2/OACTIVE, and 4
+GAT3/OACTIVE. The 2×2 extraction contains 40 TRs. The declared bottom-to-top physical
+order is ACTIVE, GAT1, GAT2, OACTIVE, GAT3, CNT1, CNT2, METAL1; the conductor-only
+`stack` omits CNT1 and CNT2.
+
+CNT1 is one physical mask with 14 separate holes: 11 ACTIVE–METAL1 and 3
+GAT2–METAL1. Nine ACTIVE holes are direct landings, one GAT2 hole at (40,200)
+joins its bus directly to the left METAL1 trunk, and the other four holes form
+two metal bridges. Bridge 1 has CNT1 A on ACTIVE (100,120), a continuous METAL1
+trace, and CNT1 B on GAT2 (150,200). Bridge 2 similarly connects ACTIVE
+(180,325) through METAL1 to GAT2 (215,200). Each bridge hole overlaps its own
+declared conductor and METAL1 across its full 15×15 px area; no hole overlaps an
+undeclared conductor. The GAT2 and ACTIVE raw masks do not overlap. CNT2 has 11
+OACTIVE–METAL1 holes. The left and right METAL1 trunks separately span the unit
+vertically; independent direct METAL1–ACTIVE and METAL1–OACTIVE examples remain.
+TR intersections are removed from every layer and never conduct. The wire width
+is approximately 20 px. These layer orders, endpoints, and geometry are fixture
+assumptions, not measured process data.
+
+The ignored `outputs/rgb-metal-bridge-20260924/` directory contains source masks,
+the actual extraction, 600/1200 px raw composites, a layer sheet, an extracted
+1200 px overlay, a labelled contact routing guide, and a machine-readable
+verification record. Earlier review directories are preserved.
 
 The adapter currently requires one endpoint pair per physical CNT/VIA mask, so
 `export-particle-sim` rejects this mixed CNT1 example before creating output. The tests retain

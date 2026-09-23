@@ -18,10 +18,17 @@ def _via(draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
 
 
 # Every landing lies within one channel segment and away from all TR intersections.
-ACTIVE_METAL_LANDINGS = tuple(
-    (x, y) for x in (100, 180) for y in (55, 145, 255, 350)
-) + ((140, 260),)
-GAT_ACTIVE_LANDINGS = ((100, 120), (180, 325))
+ACTIVE_METAL_LANDINGS = tuple((x, y) for x in (100, 180) for y in (55, 145, 255, 350)) + (
+    (140, 260),
+)
+# Each bridge uses two separate CNT1 holes and one continuous METAL1 trace.
+# The first point lands on ACTIVE; the second lands on the GAT2 bus.
+ACTIVE_GAT_METAL_BRIDGES = (
+    ((100, 120), (150, 200)),
+    ((180, 325), (215, 200)),
+)
+BRIDGE_ACTIVE_LANDINGS = tuple(active for active, _ in ACTIVE_GAT_METAL_BRIDGES)
+BRIDGE_GAT_LANDINGS = tuple(gat for _, gat in ACTIVE_GAT_METAL_BRIDGES)
 GAT_METAL_LANDINGS = ((40, 200),)
 OACTIVE_LANDINGS = tuple((x, y) for x in (380, 460) for y in (165, 235, 390, 460, 540)) + (
     (420, 460),
@@ -53,10 +60,6 @@ def make_synthetic(output_dir: str | Path) -> dict:
                 _line(draw, [(0, y), (599, y)])
         elif layer == "GAT2":
             _line(draw, [(0, 200), (599, 200)])  # periodic G bus
-            # Two non-TR contacts route distinct post-cut ACTIVE pieces through GAT2.
-            # The stubs approach each channel from the side, away from metal pads.
-            _line(draw, [(125, 200), (125, 120), (100, 120)])
-            _line(draw, [(215, 200), (215, 325), (180, 325)])
         elif layer == "GAT3":
             # Local gate branches cross OACTIVE twice each.
             for y in (420, 500):
@@ -84,8 +87,20 @@ def make_synthetic(output_dir: str | Path) -> dict:
             _line(draw, [(40, 145), (100, 145)])
             _line(draw, [(560, 235), (460, 235)])
             _line(draw, [(560, 540), (460, 540)])
+            # Two L-shaped bridges keep all metal away from declared TR pixels.
+            # Only a CNT1 hole at each end connects the bridge to its conductor.
+            _line(draw, [(100, 120), (150, 120), (150, 200)])
+            _line(draw, [(180, 325), (215, 325), (215, 200)])
+            for active, gat in ACTIVE_GAT_METAL_BRIDGES:
+                for x, y in (active, gat):
+                    draw.rectangle((x - 9, y - 9, x + 9, y + 9), fill=255)
         elif layer == "CNT1":
-            for x, y in ACTIVE_METAL_LANDINGS + GAT_ACTIVE_LANDINGS + GAT_METAL_LANDINGS:
+            for x, y in (
+                ACTIVE_METAL_LANDINGS
+                + BRIDGE_ACTIVE_LANDINGS
+                + BRIDGE_GAT_LANDINGS
+                + GAT_METAL_LANDINGS
+            ):
                 _via(draw, x, y)
         elif layer == "CNT2":
             for x, y in OACTIVE_LANDINGS:
@@ -104,7 +119,8 @@ def make_synthetic(output_dir: str | Path) -> dict:
             {"id": layer, "path": f"masks/{layer}.png", "role": role}
             for layer, (role, _) in layers.items()
         ],
-        "stack": ["GAT1", "GAT2", "GAT3", "ACTIVE", "OACTIVE", "METAL1"],
+        "stack": ["ACTIVE", "GAT1", "GAT2", "OACTIVE", "GAT3", "METAL1"],
+        "physical_stack": ["ACTIVE", "GAT1", "GAT2", "OACTIVE", "GAT3", "CNT1", "CNT2", "METAL1"],
         "tr_pairs": [
             {"gat": "GAT1", "channel": "ACTIVE"},
             {"gat": "GAT2", "channel": "OACTIVE"},
@@ -113,21 +129,15 @@ def make_synthetic(output_dir: str | Path) -> dict:
         "contacts": [
             {
                 "layer": "CNT1",
-                "lower": "GAT2",
-                "upper": "ACTIVE",
-                "holes": [list(point) for point in GAT_ACTIVE_LANDINGS],
-            },
-            {
-                "layer": "CNT1",
                 "lower": "ACTIVE",
                 "upper": "METAL1",
-                "holes": [list(point) for point in ACTIVE_METAL_LANDINGS],
+                "holes": [list(point) for point in ACTIVE_METAL_LANDINGS + BRIDGE_ACTIVE_LANDINGS],
             },
             {
                 "layer": "CNT1",
                 "lower": "GAT2",
                 "upper": "METAL1",
-                "holes": [list(point) for point in GAT_METAL_LANDINGS],
+                "holes": [list(point) for point in BRIDGE_GAT_LANDINGS + GAT_METAL_LANDINGS],
             },
             {"layer": "CNT2", "lower": "OACTIVE", "upper": "METAL1"},
         ],
