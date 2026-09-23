@@ -1,0 +1,101 @@
+# Extraction engine contract (release 0.1)
+
+Install with `python -m pip install -e '.[dev]'`. Run with
+`layout-electrode-extractor extract input.json outputs/run-1` or call
+`layout_electrode_extractor.extract(manifest_path, output_dir)`.
+The output directory must not already exist. The function returns the same object
+it writes to `manifest.json` and raises `ManifestError` or `ResourceError` for
+invalid input or resource limits. CLI errors exit with status 2.
+
+## Input manifest
+
+```json
+{
+  "schema_version": 1,
+  "pixel_size_um": 0.1,
+  "origin_um": [0.0, 0.0],
+  "connectivity": 4,
+  "layers": [
+    {"id": "GAT1", "role": "GAT", "path": "GAT1.png"},
+    {"id": "ACTIVE", "role": "ACTIVE", "path": "ACTIVE.png"},
+    {"id": "METAL1", "role": "METAL", "path": "METAL1.png"},
+    {"id": "CNT1", "role": "CNT", "path": "CNT1.png"}
+  ],
+  "stack": ["GAT1", "ACTIVE", "METAL1"],
+  "tr_pairs": [{"gat": "GAT1", "channel": "ACTIVE"}],
+  "contacts": [{"layer": "CNT1", "lower": "ACTIVE", "upper": "METAL1"}]
+}
+```
+
+`layers` lists all input images, including `OTHER` layers. Every conductor
+(`GAT`, `ACTIVE`, `OACTIVE`, `METAL`, `CONDUCTOR`) appears once in `stack`, in
+height order. Every `CNT` or `VIA` layer has one explicit contact rule whose
+lower and upper IDs are conductors in the stack. A TR pair names a `GAT` and
+an `ACTIVE` or `OACTIVE` layer. At least one TR pair is required; pairs may
+produce empty intersections. Overlapping intersections from separate source
+pairs are rejected.
+
+All PNGs must use a single grayscale or binary channel with **only 0 and 255**
+values, aligned pixel dimensions, and the same pixel size and origin specified
+for the unit. Paths are relative to the manifest directory and may not escape
+it, including through symlinks. IDs are ASCII letters followed by letters,
+digits, or underscores, up to 64 characters. Unknown fields, roles, or rules
+fail validation. `connectivity` defaults to 4 and may be 8; it applies to
+conductor, contact, and TR components and periodic boundary adjacency.
+Contact endpoints require same-pixel overlap after the TR cut. There is no
+morphology, resize, inferred contact endpoint, or diagonal overlap shortcut.
+
+## Output
+
+`manifest.json` is the stable index. Its `electrodes` array gives an extraction
+ID and per-layer path, foreground pixel count, and SHA-256 of decoded 0/255
+pixels. Every electrode PNG covers the full 2×2 output ROI, with 0.1 µm/px
+unchanged if that was the input scale. A layer omitted from an electrode is
+empty. All remaining conductor and contact pixels in the 2×2 ROI are partitioned
+among electrode masks without overlap. `tr` lists a separate full-size PNG and
+source pair for each TR instance. The total TR union is `tr_union.png`.
+
+`raw_layers/*.png` preserves each original unit mask; `cut_layers/*.png`
+records each unit mask after **the union of every TR intersection** was removed,
+including gate, contact, and `OTHER` layers. `source_manifest_sha256` and
+`raw_sha256_pixels` support stale annotation detection. The `origin_um`,
+`pixel_size_um`, unit/output shapes and physical sizes explicitly describe the
+2×2 grid. IDs are deterministic for identical inputs; display names and
+annotation state belong in a separate file. `naming_complete` starts false.
+
+`tr[].terminal_adjacency` records direct post-cut neighbors on each source
+layer, including the split gate branches. Each record gives a layer, electrode
+ID when that instance appears in the 2×2 ROI, graph component, coset, and
+number of adjacent pixel edges. A null electrode ID denotes a neighbor beyond
+the 2×2 output. The raw gate mask is available for pre-cut net evidence; these
+neighbors are **not** an instruction to merge electrodes across a TR.
+
+`connectivity.json` records each within-unit segment node and periodic edge's
+tile displacement, plus the cycle subgroup generators for each graph component.
+The electrode `graph_component` and `coset` identify a connected instance in
+the infinite periodic lift. Equal local shape or base graph component alone
+does not identify the same electrode. TR graph component numbers have their own
+source-pair namespace.
+
+`review/issues.json` repeats `manifest.json`'s issues. A contact touching more
+than one independent lower or upper component is reported as
+`multi_endpoint_contact`; a missing side as `missing_endpoint_contact`.
+`periodic_contact_network` reports a hole mask with an unbounded periodic
+component. Such cases remain extracted, but a strict one-to-one contact
+adapter must reject them. `orphan_contact` reports a contact-only electrode.
+
+## Exact periodic rule and limits
+
+The engine labels components inside one unit and adds displacement-labelled
+edges for boundary pixel adjacency and contact overlap. In each finite graph
+component, tree paths provide a potential for every node; cycle displacements
+generate a subgroup of Z². Two `(segment, tile_x, tile_y)` states belong to
+one electrode exactly when their potential-adjusted tile difference lies in
+that subgroup. This handles winding paths, infinite buses, contacts and TRs
+crossing unit boundaries without a finite halo assumption. A 2×2 image is then
+rendered from the four unit copies using those exact instance identities.
+
+A unit may contain at most 2,000,000 pixels, all input layers together at most
+20,000,000 layer-pixels, 32 layers, 100,000 graph nodes, 1,000,000 graph edges,
+and 1 GB of decoded output mask bytes. Exceeding a limit is a hard error;
+limits are resource protection, not an approximation of connectivity.

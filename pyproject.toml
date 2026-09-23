@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "layout-electrode-extractor"
+version = "0.1.0"
+description = "Pixel-exact periodic electrode extraction from binary layout layers"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "Pillow>=10", "scipy>=1.11"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[project.scripts]
+layout-electrode-extractor = "layout_electrode_extractor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
