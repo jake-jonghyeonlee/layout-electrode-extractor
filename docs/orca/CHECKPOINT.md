@@ -1,5 +1,15 @@
 # Orca checkpoint
 
+## Connected gate routing follow-up, 2026-09-23
+
+- Recovered existing Run `run_5463d205f39d` after former coordinator terminal `term_c02825c0-32ec-42d5-88d4-bfc014d70acf` positively exited. Current coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` bound by `run-use` at consumer generation 2. Earlier Tasks and Dispatches are settled; no active editor was found before launch.
+- Baseline `ffb5d17` on `main`, tracked tree clean; unrelated untracked `docs/orca/FINAL-REPORT.ko.md` preserved. User requested connected, visibly routed GAT geometry while preserving the 6/unit and 24/2×2 TR counts and bus/contact contracts.
+- Task `task_196653aaf38f` saved for this follow-up. Sole Luna high editor Dispatch `ctx_5c51fb0b799a` runs in `term_4d36882d-0f32-4e48-a747-193f0d3cb2e3`; terminal displayed GPT-6-Luna high before `worker-start`. Source scope is `src/layout_electrode_extractor/synthetic.py`, plus Git-ignored review artifacts under `outputs/rgb-bus-review-20260923/`.
+- User corrected the Task while Dispatch `ctx_5c51fb0b799a` was active: keep six separate GAT features and make each a visibly longer wire; the shared-rail requirement in the saved initial spec is superseded. The same worker remains sole editor. Coordinator relayed the authoritative revision through Orca message `msg_b45321268701`; acceptance now requires four separate GAT1 and two separate GAT2 source components, with the same six intended TR crossings per unit.
+- Task `task_196653aaf38f`, Dispatch `ctx_5c51fb0b799a` settled succeeded at product commit `e57fb859177df1670f20f308b0f5e4e130e838fa`. The worker removed its in-progress shared-rail version before settlement. Four GAT1 and two GAT2 features are separate 120 px lines. The coordinator inspected the exact commit diff and reopened `raw-composite-1200.png`, `extracted-overlay-1200.png`, and `raw-layer-sheet.png`; the longer independent gate lines are visible.
+- Regenerated Git-ignored artifacts in `outputs/rgb-bus-review-20260923/`: `source/`, `extraction/`, `raw-composite-600.png`, `raw-composite-1200.png`, `raw-layer-sheet.png`, `extracted-overlay-1200.png`, `ASSUMPTIONS.md`, and `verification.json`. Coordinator reran `render_review.py`, five focused `tests/test_synthetic_adapter.py` cases, and Ruff lint successfully. Verification reports GAT components 4+2, intended overlap components 4+2, unintended overlaps 0, six TR/unit and 24/2×2, six per quadrant, nine CNT/unit, one contact on each RGB bus, all RGB/ACTIVE seam checks passing, and 600×600 to 1200×1200 at 0.1 µm/px. A Ruff format check flags only a pre-existing extra space on the unchanged R bus line in `synthetic.py`.
+- Worker release receipt retained its external terminal without process action; delivery `delivery_1c2ed2a12f9e` was acknowledged and no reclaimable workers remain. Full pytest and particle-sim integration remain after user visual approval. The unrelated untracked `docs/orca/FINAL-REPORT.ko.md` remains untouched; no remote publication occurred.
+
 ## RGB bus fixture review run, 2026-09-23
 
 - Run `run_5463d205f39d`; coordinator terminal `term_c02825c0-32ec-42d5-88d4-bfc014d70acf`.
