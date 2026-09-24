@@ -1,5 +1,11 @@
 # Orca checkpoint
 
+## Particle-sim revision plan v3, 2026-09-24
+
+- Same Run `run_5463d205f39d`, sole coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2). Saved direct documentation Task `task_dbf4f760e6be` on baseline `bbda927`; no implementation Dispatch or review worker. v2 remains preserved; v3 is `docs/orca/PARTICLE-SIM-REVISION-PLAN-v3-20260924.md`. Particle-sim checkout is read-only and unrelated untracked `docs/orca/FINAL-REPORT.ko.md` is untouched.
+- User resolved all three earlier choices: CNO >=50% uses each physical CNT hole's complete area, represented by each all-layer-TR-cut simulation input CNT connected component with raw/cut/effective provenance and explicit partial-TR/exterior-fragment diagnosis; statistics use central `[300,900)²` with 300 px/30 µm/0.5-unit margin per side and full influence-support proof; CNO and circuit open are independently calculated and then deduplicated with CNO priority, retaining raw and post-dedup outputs. The **scope of deduplication** remains a new pending question. Same particle/sample, position/size, source step and affected connection is provisional only; no implementation starts on that assumption.
+- v3 updates external particle-sim dependencies for full-hole 49/50/51 boundary tests, raw/cut/effective counts, OR/union coverage, open/CNO matching keys, and ROI support checks. Future implementation still requires a fresh exact Claude Opus 5.5 high plan review; this documentation phase does not launch one.
+
 ## Particle-sim revision plan v2, 2026-09-24
 
 - Same Run `run_5463d205f39d`, sole coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2), baseline `86e7a06`; no active/reclaimable worker, no editor Dispatch. Saved direct document Task `task_f82d2c2df4c`. Unrelated untracked `docs/orca/FINAL-REPORT.ko.md` remains untouched; particle-sim checkout read-only.
