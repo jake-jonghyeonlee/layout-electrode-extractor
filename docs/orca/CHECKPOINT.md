@@ -1,5 +1,10 @@
 # Orca checkpoint
 
+## v5 implementation kickoff and required plan review, 2026-09-24
+
+- User authorized v5 implementation on baseline `762a239` in the existing Run `run_5463d205f39d`; coordinator remains `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2). No new Run or editor yet. Tracked tree was clean, unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched; sibling `particle-sim` remains read-only. MMO CLI unavailable, and no active Orca Dispatch was found. Codex hook configuration still invokes the reviewed vibe-island bridge.
+- Draft executable contract `docs/orca/IMPLEMENTATION-PLAN-v1-20260924.md` separates extractor P0/P1/P2/P3, external isolated-copy E1/E2/E3, and coordinator I1 validation. Synthetic settings are labeled assumptions; missing actual thickness/net/distribution inputs do not block synthetic functionality. Before any edit Dispatch, fresh exact `claude-opus-5-5` high read-only plan review is required. A distinct fresh exact Opus 5.5 high review must cover the final code candidate.
+
 ## Particle-sim revision plan v5: fixed diameters, 2026-09-24
 
 - Same Run `run_5463d205f39d`; direct small documentation edit on baseline `d163c46`, no new editor/reviewer or product implementation. v4 preserved; v5 is `docs/orca/PARTICLE-SIM-REVISION-PLAN-v5-20260924.md`. Particle-sim remains read-only and unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched.
