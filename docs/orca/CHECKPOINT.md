@@ -1,5 +1,10 @@
 # Orca checkpoint
 
+## Particle-sim revision plan v5: fixed diameters, 2026-09-24
+
+- Same Run `run_5463d205f39d`; direct small documentation edit on baseline `d163c46`, no new editor/reviewer or product implementation. v4 preserved; v5 is `docs/orca/PARTICLE-SIM-REVISION-PLAN-v5-20260924.md`. Particle-sim remains read-only and unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched.
+- User specified **diameters** `1..30` µm in 1 µm increments plus `40,50` µm: exactly 32 bins. At 0.1 µm/px radii are 5..150, 200, 250 px. Central `[300,900)²` has 300 px margin each side, leaving 50 px = 5 µm after only the largest particle radius. Full CNT-hole/kernel/contact margin/short support and nonlocal open connectivity still require separate validation for every bin; 1/30/40/50 µm are representative boundary cases. Size probabilities/densities are not supplied, so no equal-weight assumption. Same-connection CNO/open-only dedup and retained short remain fixed. Future fresh exact Opus 5.5 high plan review gate remains.
+
 ## Particle-sim revision plan v4 and boundary cost, 2026-09-24
 
 - Same Run `run_5463d205f39d`, coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2), direct docs Task `task_fb3ee3d614e3`, baseline `0a71818`; no implementation Dispatch or new review worker. v3 retained, v4 `docs/orca/PARTICLE-SIM-REVISION-PLAN-v4-20260924.md`. Sibling particle-sim read-only, unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched.
