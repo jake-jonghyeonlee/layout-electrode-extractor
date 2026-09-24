@@ -1,5 +1,11 @@
 # Orca checkpoint
 
+## Particle-sim revision plan v2, 2026-09-24
+
+- Same Run `run_5463d205f39d`, sole coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2), baseline `86e7a06`; no active/reclaimable worker, no editor Dispatch. Saved direct document Task `task_f82d2c2df4c`. Unrelated untracked `docs/orca/FINAL-REPORT.ko.md` remains untouched; particle-sim checkout read-only.
+- User confirmed: layer thicknesses and maskless dielectrics will be external process inputs; only mask-bearing layers are particle-source-stage candidates, maskless dielectric source stage count zero; CNO coverage threshold is inclusive >=50%. The source chat has asked three still-pending questions about CNO denominator, 2×2 boundary accounting, and per-hole CNO versus aggregate circuit failure. Do not treat provisional recommendations as answers.
+- Narrow read-only code check: particle-sim CNO currently tests full effective-hole coverage and ORs holes (`failure/contact_not_open.py`); `geometry/contacts.py` discards non-effective hole coordinates; `ParticleSourceStep.lands_after_layer` accepts any stack layer and landing z is that layer's top; finite ROI/open terminals have no automatic periodic wrap. Current extractor `physical_stack` accepts only mask-bearing conductor/CNT/VIA IDs, so the full external process stack must include maskless dielectric rows separately while preserving this projection. Plan only: `docs/orca/PARTICLE-SIM-REVISION-PLAN-v2-20260924.md`, with file scopes, dependencies, 49/50/51 and odd-pixel tests, source-stage filtering, partition/net/raw-cut/ROI invariants, rollback/regeneration criteria and fresh exact Opus 5.5 plan-review gate before any implementation.
+
 ## Opus 5.5 practical applicability review, 2026-09-24
 
 - Existing Run `run_5463d205f39d` and sole coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2) retained. Baseline `2f000f0` (documentation `f771c0c`, product `79a4d68`); tracked tree clean and unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched before this review. User-supplied latest AGENTS instructions require exact `claude-opus-5-5` high for this independent read-only judgment and supersede the repository file's older Sonnet route.
