@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections import Counter
 from itertools import pairwise
 from pathlib import Path
@@ -10,6 +11,9 @@ import pytest
 from PIL import Image
 from scipy import ndimage
 
+from layout_electrode_extractor import particle_sim_adapter
+from layout_electrode_extractor.cli import main as cli_main
+from layout_electrode_extractor.contact_export import _check_four_partition
 from layout_electrode_extractor.engine import extract
 from layout_electrode_extractor.particle_sim_adapter import export_particle_sim
 from layout_electrode_extractor.review import ReviewProject
@@ -516,4 +520,278 @@ def test_unsupported_contact_endpoint_fails_before_creating_output(tmp_path: Pat
     with pytest.raises(ManifestError, match="unsupported contact topology"):
         export_particle_sim(extraction, output)
 
+    assert not output.exists()
+
+
+@pytest.fixture(scope="module")
+def mixed_extraction(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("mixed-export")
+    generated = Path(make_synthetic(root / "source")["manifest"])
+    extraction = root / "extraction"
+    extract(generated, extraction)
+    return extraction
+
+
+def _synthetic_config() -> dict:
+    path = Path(__file__).resolve().parents[1] / "examples" / "synthetic-particle-config.json"
+    return json.loads(path.read_text())
+
+
+def _write_config(tmp_path: Path, config: dict) -> Path:
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(config))
+    return path
+
+
+def test_configured_mixed_export_partitions_all_holes(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    output = tmp_path / "product"
+    report = export_particle_sim(
+        mixed_extraction, output, _write_config(tmp_path, _synthetic_config())
+    )
+    product = json.loads((output / "product.yaml").read_text())
+    provenance = json.loads((output / "adapter-provenance.json").read_text())
+    assert (
+        report["electrodes"],
+        report["nets"],
+        report["contacts"],
+        report["holes"],
+        report["classified_pairs"],
+    ) == (155, 101, 3, 100, 11879)
+    assert len(product["layer_masks"]) == 6
+    assert product["particle_sizes_um"] == [*range(1, 31), 40, 50]
+    assert [row["hole_layer"] for row in product["contacts"]] == ["CNT1", "CNT1", "CNT2"]
+    assert len(provenance["contact_holes"]) == 100
+    assert {row["raw_pixels"] for row in provenance["contact_holes"]} == {225}
+    assert {row["cut_pixels"] for row in provenance["contact_holes"]} == {225}
+    assert all(0 < row["effective_pixels"] <= 225 for row in provenance["contact_holes"])
+    electrode_paths = {row["electrode_id"]: row["path"] for row in product["electrodes"]}
+    cached_masks = {}
+    unit_labels = {
+        hole: ndimage.label(
+            np.asarray(Image.open(mixed_extraction / "raw_layers" / f"{hole}.png")) > 0
+        )[0]
+        for hole in ("CNT1", "CNT2")
+    }
+    for row in provenance["contact_holes"]:
+        hole = row["hole_layer"]
+        ys, xs = np.nonzero(unit_labels[hole] == row["raw_component"])
+        tx, ty = row["tile_xy"]
+        yy, xx = ys + ty * 600, xs + tx * 600
+        for electrode in (row["lower_electrode"], row["upper_electrode"]):
+            if electrode not in cached_masks:
+                cached_masks[electrode] = (
+                    np.asarray(Image.open(output / electrode_paths[electrode])) > 0
+                )
+        effective = (
+            cached_masks[row["lower_electrode"]][yy, xx]
+            & cached_masks[row["upper_electrode"]][yy, xx]
+        )
+        assert row["effective_pixels"] == int(np.count_nonzero(effective))
+    for hole in ("CNT1", "CNT2"):
+        union = np.zeros((1200, 1200), dtype=bool)
+        for row in product["contacts"]:
+            if row["hole_layer"] == hole:
+                mask = np.asarray(Image.open(output / row["path"])) > 0
+                assert not np.any(union & mask)
+                union |= mask
+        cut = np.asarray(Image.open(mixed_extraction / "cut_layers" / f"{hole}.png")) > 0
+        assert np.array_equal(union, np.tile(cut, (2, 2)))
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda c: c.update(schema_version=2), "schema_version"),
+        (lambda c: c.update(unexpected=1), "unknown"),
+        (lambda c: c.pop("process_stack"), "missing"),
+        (lambda c: c.update(particle_sizes_um=[]), "particle_sizes_um"),
+        (lambda c: c.update(particle_sizes_um=[1, 1]), "strictly increasing"),
+        (lambda c: c.update(particle_sizes_um=[2, 1]), "strictly increasing"),
+        (lambda c: c.update(particle_sizes_um=[31]), "strictly increasing"),
+        (lambda c: c["process_stack"][0].update(thickness_um=float("nan")), "finite"),
+        (lambda c: c["process_stack"][0].update(patterned=False), "patterned"),
+        (lambda c: c["source_stages"][0].update(surface_model="conformal"), "only flat"),
+        (lambda c: c["source_stages"][1].update(step_id="SOURCE_CNT1_OPEN"), "duplicate"),
+        (lambda c: c["contact_applicable_stages"].update(CNT1=["SOURCE_CNT2_OPEN"]), "CNT1"),
+    ],
+)
+def test_config_rejected_before_output(
+    tmp_path: Path, mixed_extraction: Path, change, message: str
+) -> None:
+    config = _synthetic_config()
+    change(config)
+    output = tmp_path / "product"
+    with pytest.raises(ManifestError, match=message):
+        export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    assert not output.exists()
+
+
+def test_synthetic_size_subset_and_measured_contact_rejection(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    config = _synthetic_config()
+    config["particle_sizes_um"] = [1, 30, 40, 50]
+    output = tmp_path / "subset"
+    export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    product = json.loads((output / "product.yaml").read_text())
+    provenance = json.loads((output / "adapter-provenance.json").read_text())
+    assert product["particle_sizes_um"] == provenance["particle_sizes_um"] == [1, 30, 40, 50]
+    config["profile"] = "measured"
+    rejected = tmp_path / "measured"
+    with pytest.raises(
+        ManifestError, match="measured CNT open stage/contact physics is unsupported"
+    ):
+        export_particle_sim(mixed_extraction, rejected, _write_config(tmp_path, config))
+    assert not rejected.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("drop", "raw hole provenance"),
+        ("drop_hole", "raw hole provenance"),
+        ("duplicate", "duplicate raw hole provenance"),
+        ("endpoint", "wrong or inconsistent hole endpoints"),
+        ("rule_endpoint", "unsupported contact topology"),
+        ("rule_index", "does not match its declared rule"),
+        ("extra", "missing or unknown hole layers"),
+        ("partial_tr", "partial or complete TR cut"),
+        ("edge", "edge"),
+        ("overlap", "overlap"),
+    ],
+)
+def test_corrupt_hole_or_electrode_rejected_before_output(
+    tmp_path: Path, mixed_extraction: Path, mutation: str, message: str
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    metadata = json.loads(metadata_path.read_text())
+    if mutation == "drop":
+        metadata["contact_holes"]["raw_components"].pop()
+    elif mutation == "drop_hole":
+        raw_path = source / "raw_layers" / "CNT1.png"
+        labels, _ = ndimage.label(np.asarray(Image.open(raw_path)) > 0)
+        for directory in ("raw_layers", "cut_layers"):
+            path = source / directory / "CNT1.png"
+            mask = np.asarray(Image.open(path)).copy()
+            mask[labels == 1] = 0
+            Image.fromarray(mask).save(path)
+    elif mutation == "duplicate":
+        metadata["contact_holes"]["raw_components"].append(
+            metadata["contact_holes"]["raw_components"][0].copy()
+        )
+    elif mutation == "endpoint":
+        metadata["contact_holes"]["raw_components"][0]["lower"] = "GAT1"
+    elif mutation == "rule_endpoint":
+        metadata["contact_rules"][0]["lower"] = "UNKNOWN_LAYER"
+    elif mutation == "rule_index":
+        metadata["contact_holes"]["raw_components"][0]["contact_rule_index"] = 2
+        metadata["contact_holes"]["components"][0]["contact_rule_index"] = 2
+    elif mutation == "extra":
+        extra = metadata["contact_holes"]["raw_components"][0].copy()
+        extra["layer"] = "UNKNOWN_LAYER"
+        metadata["contact_holes"]["raw_components"].append(extra)
+    elif mutation == "partial_tr":
+        raw = np.asarray(Image.open(source / "raw_layers" / "CNT1.png")) > 0
+        y, x = np.argwhere(raw)[0]
+        tr = np.asarray(Image.open(source / "tr_union.png")).copy()
+        cut_path = source / "cut_layers" / "CNT1.png"
+        cut = np.asarray(Image.open(cut_path)).copy()
+        cut[y, x] = 0
+        Image.fromarray(cut).save(cut_path)
+        for ty in range(2):
+            for tx in range(2):
+                tr[y + ty * 600, x + tx * 600] = 255
+        Image.fromarray(tr).save(source / "tr_union.png")
+    elif mutation == "edge":
+        for directory in ("raw_layers", "cut_layers"):
+            path = source / directory / "CNT1.png"
+            mask = np.asarray(Image.open(path)).copy()
+            mask[55, :180] = 255
+            Image.fromarray(mask).save(path)
+    elif mutation == "overlap":
+        active_rows = [row for row in metadata["electrodes"] if "ACTIVE" in row["layers"]]
+        first = np.asarray(Image.open(source / active_rows[0]["layers"]["ACTIVE"]["path"]))
+        second_path = source / active_rows[1]["layers"]["ACTIVE"]["path"]
+        second = np.asarray(Image.open(second_path)).copy()
+        y, x = np.argwhere(first > 0)[0]
+        second[y, x] = 255
+        Image.fromarray(second).save(second_path)
+    metadata_path.write_text(json.dumps(metadata))
+    output = tmp_path / "product"
+    with pytest.raises(ManifestError, match=message):
+        export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
+    assert not output.exists()
+
+
+def test_diagonal_eight_connected_holes_rejected() -> None:
+    diagonal = np.array([[1, 0], [0, 1]], dtype=bool)
+    with pytest.raises(ManifestError, match="8-connectivity merges"):
+        _check_four_partition(diagonal, "CNT1", 8)
+
+
+def test_export_cli_modes(tmp_path: Path, mixed_extraction: Path, capsys) -> None:
+    legacy_rejected = tmp_path / "legacy-rejected"
+    assert cli_main(["export-particle-sim", str(mixed_extraction), str(legacy_rejected)]) == 2
+    assert not legacy_rejected.exists()
+    synthetic = tmp_path / "synthetic"
+    config = _write_config(tmp_path, _synthetic_config())
+    assert (
+        cli_main(
+            ["export-particle-sim", str(mixed_extraction), str(synthetic), "--config", str(config)]
+        )
+        == 0
+    )
+    assert json.loads((synthetic / "product.yaml").read_text())["particle_sizes_um"] == [
+        *range(1, 31),
+        40,
+        50,
+    ]
+    measured_config = _synthetic_config()
+    measured_config["profile"] = "measured"
+    measured = tmp_path / "measured"
+    assert (
+        cli_main(
+            [
+                "export-particle-sim",
+                str(mixed_extraction),
+                str(measured),
+                "--config",
+                str(_write_config(tmp_path, measured_config)),
+            ]
+        )
+        == 2
+    )
+    assert not measured.exists()
+    assert "unsupported" in capsys.readouterr().err
+
+
+def test_export_write_failure_leaves_no_output_or_sibling(
+    tmp_path: Path, mixed_extraction: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_copy(*_args, **_kwargs) -> None:
+        raise OSError("injected copy failure")
+
+    monkeypatch.setattr(particle_sim_adapter.shutil, "copyfile", fail_copy)
+    output = tmp_path / "product"
+    with pytest.raises(OSError, match="injected copy failure"):
+        export_particle_sim(mixed_extraction, output, _write_config(tmp_path, _synthetic_config()))
+    assert not output.exists()
+    assert not list(tmp_path.glob(".product.*"))
+
+
+def test_unsafe_generated_legacy_contact_id_rejected_before_output(tmp_path: Path) -> None:
+    generated = _legacy_adapter_input(tmp_path / "input")
+    extraction = tmp_path / "extraction"
+    extract(generated, extraction)
+    metadata_path = extraction / "manifest.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["contact_rules"][0]["layer"] = "CNT__UNSAFE"
+    metadata_path.write_text(json.dumps(metadata))
+    output = tmp_path / "product"
+    with pytest.raises(ManifestError, match="unsafe generated contact_id"):
+        export_particle_sim(extraction, output)
     assert not output.exists()

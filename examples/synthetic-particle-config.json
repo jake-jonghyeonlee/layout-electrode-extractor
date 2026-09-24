@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "profile": "synthetic",
+  "process_stack": [
+    {"id": "ACTIVE", "kind": "conductor", "mask_layer": "ACTIVE", "material_type": "conductor", "thickness_um": 0.1, "patterned": true},
+    {"id": "GAT1", "kind": "conductor", "mask_layer": "GAT1", "material_type": "conductor", "thickness_um": 0.05, "patterned": true},
+    {"id": "GAT2", "kind": "conductor", "mask_layer": "GAT2", "material_type": "conductor", "thickness_um": 0.05, "patterned": true},
+    {"id": "ILD_ACTIVE_OACTIVE", "kind": "dielectric", "mask_layer": null, "material_type": "inorganic", "thickness_um": 0.2, "patterned": false, "planarization_factor": 0.5},
+    {"id": "OACTIVE", "kind": "conductor", "mask_layer": "OACTIVE", "material_type": "conductor", "thickness_um": 0.1, "patterned": true},
+    {"id": "GAT3", "kind": "conductor", "mask_layer": "GAT3", "material_type": "conductor", "thickness_um": 0.05, "patterned": true},
+    {"id": "CNT1", "kind": "hole", "mask_layer": "CNT1", "material_type": "inorganic", "thickness_um": 0.02, "patterned": true},
+    {"id": "CNT2", "kind": "hole", "mask_layer": "CNT2", "material_type": "inorganic", "thickness_um": 0.02, "patterned": true},
+    {"id": "ILD_OACTIVE_METAL", "kind": "dielectric", "mask_layer": null, "material_type": "organic", "thickness_um": 0.2, "patterned": false, "planarization_factor": 0.5},
+    {"id": "METAL1", "kind": "conductor", "mask_layer": "METAL1", "material_type": "conductor", "thickness_um": 0.1, "patterned": true}
+  ],
+  "source_stages": [
+    {"step_id": "SOURCE_CNT1_OPEN", "after_layer": "CNT1", "semantics": "cnt_open_before_fill_approximation", "surface_model": "flat", "fab_distribution_layer": "ASSUMED_CNT1"},
+    {"step_id": "SOURCE_CNT2_OPEN", "after_layer": "CNT2", "semantics": "cnt_open_before_fill_approximation", "surface_model": "flat", "fab_distribution_layer": "ASSUMED_CNT2"},
+    {"step_id": "SOURCE_AFTER_METAL1", "after_layer": "METAL1", "semantics": "after_pattern", "surface_model": "flat", "fab_distribution_layer": "ASSUMED_TOP"}
+  ],
+  "contact_applicable_stages": {"CNT1": ["SOURCE_CNT1_OPEN"], "CNT2": ["SOURCE_CNT2_OPEN"]}
+}

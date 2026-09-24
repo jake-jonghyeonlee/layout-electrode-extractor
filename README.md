@@ -52,12 +52,14 @@ the actual extraction, 600/1200 px raw composites, a layer sheet, an extracted
 1200 px overlay, a labelled contact routing guide, and a machine-readable
 verification record. Earlier review directories are preserved.
 
-The adapter currently requires one endpoint pair per physical CNT/VIA mask, so
-`export-particle-sim` rejects this mixed CNT1 example before creating output. The tests retain
-a separate legacy one-pair-per-layer fixture to validate the adapter's supported path.
+The adapter supports mixed CNT1 only with the explicit
+[synthetic export config](examples/synthetic-particle-config.json). It partitions the one
+physical CNT1 mask into endpoint-pair contact rows while retaining `hole_layer: CNT1`.
+Without `--config`, the legacy one-pair-per-layer export remains available and rejects
+mixed CNT1 before creating output. The config values are synthetic assumptions.
 The [2026-09-24 linkage check](docs/orca/PARTICLE-SIM-LINK-CHECK-20260924.md) records a fresh
-CLI extraction, the exact export failure, a separate particle-sim `validate-input` positive
-control, an actual extracted-electrode mask preview, and the remaining integration work.
+CLI extraction, the earlier legacy export result, an actual extracted-electrode mask preview,
+and the remaining integration work.
 
 Extraction preserves the 0.1 µm/px pitch and writes 1200×1200 px, or 120×120 µm. This has four
 times the unit cell area (14,400 µm² versus 3,600 µm²); raw critical area and defect counts do
@@ -69,8 +71,29 @@ an artificial terminal; this fixture declares no automatic ROI-boundary terminal
 
 ## Validate and run particle-sim
 
-Install or use the read-only particle-sim checkout separately. For a supported legacy
-one-pair-per-layer export, validate its generated schema 2.0 manifest with:
+For the current mixed synthetic extraction, export and validate with:
+
+```sh
+.venv/bin/layout-electrode-extractor export-particle-sim \
+  outputs/rgb-metal-bridge-20260924/extraction outputs/my-mixed-export \
+  --config examples/synthetic-particle-config.json
+/Users/jonghyeonlee/git/particle-sim/.venv/bin/particle-sim validate-input \
+  --product-config outputs/my-mixed-export/product.yaml
+```
+
+The version-one JSON config requires an ordered physical process stack and ordered source
+stages. Conductor rows have their own mask and patterned conductor material; hole rows have
+their own physical mask and are converted to non-patterned inorganic simulator stack rows;
+unmasked dielectric rows have no stage. The example emits 32 particle diameters, 1–30, 40,
+and 50 µm. An explicit synthetic size list must be a strictly increasing subset of those
+diameters. `adapter-provenance.json` records the selected list, stage semantics, and each
+hole's raw, cut, and effective pixel counts. The CNT open stages use a flat-film approximation;
+they establish API and geometry compatibility, not physical CNO validity. A measured config
+with contacts is rejected because particle-sim cannot yet model the open CNT surface; a
+contact-free measured config awaits the P2 net-mapping extension.
+
+For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0
+manifest with:
 
 ```sh
 /Users/jonghyeonlee/git/particle-sim/.venv/bin/particle-sim validate-input \

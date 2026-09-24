@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     particle_export.add_argument("extraction")
     particle_export.add_argument("output")
+    particle_export.add_argument("--config", help="strict version-one JSON process export config")
     args = parser.parse_args(argv)
     try:
         if args.command == "review":
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "export-particle-sim":
-            result = export_particle_sim(args.extraction, args.output)
+            result = export_particle_sim(args.extraction, args.output, args.config)
             print(json.dumps(result, sort_keys=True))
             return 0
         metadata = extract(args.manifest, args.output)

@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
+import tempfile
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
+from .contact_export import prepare_contacts
+from .export_config import load_export_config, product_stack
 from .schema import ManifestError
 
 _CONDUCTOR_ROLES = {"GAT", "ACTIVE", "OACTIVE", "METAL", "CONDUCTOR"}
+_CONTACT_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 
 
 def _stack_layers(meta: dict, layers: dict[str, dict], contacts: list[dict]) -> list[dict]:
@@ -138,8 +145,38 @@ def _stack_layers(meta: dict, layers: dict[str, dict], contacts: list[dict]) -> 
     return rows
 
 
-def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> dict:
-    """Write a schema-2.0 JSON/YAML-compatible product manifest and masks."""
+def _legacy_contacts(
+    source: Path, contacts: list[dict]
+) -> tuple[list[dict], dict[str, np.ndarray], list[dict], int]:
+    """Keep the old one-pair-per-layer, TR-cut mask contract unchanged."""
+    rows = []
+    masks = {}
+    holes = 0
+    for contact in contacts:
+        hole = contact["layer"]
+        if not _CONTACT_ID.fullmatch(hole) or "__" in hole or ":" in hole:
+            raise ManifestError(f"unsafe generated contact_id {hole}")
+        path = f"masks/contact_{hole}_tr_cut.png"
+        with Image.open(source / "cut_layers" / f"{hole}.png") as image:
+            unit = np.asarray(image.convert("L")) > 0
+        holes += 4 * ndimage.label(unit)[1]
+        masks[path] = np.tile(unit, (2, 2))
+        rows.append(
+            {
+                "contact_id": hole,
+                "path": path,
+                "hole_layer": hole,
+                "lower_layer": contact["lower"],
+                "upper_layer": contact["upper"],
+            }
+        )
+    return rows, masks, [], holes
+
+
+def export_particle_sim(
+    extraction_dir: str | Path, output_dir: str | Path, config: str | Path | None = None
+) -> dict:
+    """Validate first, then atomically publish a schema-2.0 export."""
     source = Path(extraction_dir).resolve(strict=True)
     output = Path(output_dir).resolve()
     if output.exists():
@@ -148,14 +185,98 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
     layers = {row["id"]: row for row in meta["layers"]}
     conductors = list(meta["stack"])
     contacts = [row for row in meta["contact_rules"]]
+    settings = load_export_config(config, meta, contacts) if config is not None else None
     # Resolve unsupported or ambiguous topology before creating any output files.
     contact_layers = [row["layer"] for row in contacts]
-    if len(contact_layers) != len(set(contact_layers)):
+    if settings is None and len(contact_layers) != len(set(contact_layers)):
         raise ManifestError(
             "unsupported contact topology: particle-sim export requires one endpoint pair "
             "per physical CNT/VIA layer; per-hole rules need separate validated masks"
         )
-    product_layers = _stack_layers(meta, layers, contacts)
+    product_layers = product_stack(settings) if settings else _stack_layers(meta, layers, contacts)
+    if settings:
+        contact_rows, contact_masks, hole_provenance = prepare_contacts(
+            source, meta, contacts, mixed=True
+        )
+        hole_count = len(hole_provenance)
+    else:
+        contact_rows, contact_masks, hole_provenance, hole_count = _legacy_contacts(
+            source, contacts
+        )
+    for row in contact_rows:
+        contact_id = row["contact_id"]
+        if not _CONTACT_ID.fullmatch(contact_id) or "__" in contact_id or ":" in contact_id:
+            raise ManifestError(f"unsafe generated contact_id {contact_id}")
+    if settings:
+        for row in contact_rows:
+            row["applicable_particle_source_steps"] = settings["contact_applicable_stages"][
+                row["hole_layer"]
+            ]
+        steps = [
+            {
+                "step_id": stage["step_id"],
+                "lands_after_layer": stage["after_layer"],
+                "surface_model": stage["surface_model"],
+                "fab_distribution_layer": stage["fab_distribution_layer"],
+            }
+            for stage in settings["source_stages"]
+        ]
+    else:
+        for row in contact_rows:
+            row["applicable_particle_source_steps"] = ["SOURCE_AFTER_TOP_CONDUCTOR"]
+        steps = [
+            {
+                "step_id": "SOURCE_AFTER_TOP_CONDUCTOR",
+                "lands_after_layer": conductors[-1],
+                "surface_model": "flat",
+                "fab_distribution_layer": "ASSUMED_SYNTHETIC_SOURCE",
+            }
+        ]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    try:
+        report = _write_export(
+            source,
+            staging,
+            output,
+            meta,
+            layers,
+            conductors,
+            contacts,
+            product_layers,
+            contact_rows,
+            contact_masks,
+            hole_provenance,
+            hole_count,
+            steps,
+            settings,
+        )
+        if output.exists():
+            raise FileExistsError(f"output already exists: {output}")
+        os.rename(staging, output)
+        return report
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+
+
+def _write_export(
+    source: Path,
+    output: Path,
+    final_output: Path,
+    meta: dict,
+    layers: dict,
+    conductors: list[str],
+    contacts: list[dict],
+    product_layers: list[dict],
+    contact_rows: list[dict],
+    contact_masks: dict[str, np.ndarray],
+    hole_provenance: list[dict],
+    hole_count: int,
+    steps: list[dict],
+    settings: dict | None,
+) -> dict:
+    """Write to an unpublished sibling directory after preflight succeeds."""
     source_layer = conductors[-1]
     electrode_rows = []
     electrode_masks: dict[str, Path] = {}
@@ -177,7 +298,6 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
             electrode_by_layer[layer].append(row)
             electrode_masks[path] = source / info["path"]
 
-    output.mkdir(parents=True)
     masks_dir = output / "masks"
     masks_dir.mkdir()
     layer_mask_rows = []
@@ -190,24 +310,8 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
     for relative, input_path in electrode_masks.items():
         shutil.copyfile(input_path, output / relative)
 
-    contact_rows = []
-    for contact in contacts:
-        hole = contact["layer"]
-        contact_rows.append(
-            {
-                "contact_id": hole,
-                "path": f"masks/contact_{hole}_tr_cut.png",
-                "hole_layer": hole,
-                "lower_layer": contact["lower"],
-                "upper_layer": contact["upper"],
-                "applicable_particle_source_steps": ["SOURCE_AFTER_TOP_CONDUCTOR"],
-            }
-        )
-        with Image.open(source / "cut_layers" / f"{hole}.png") as image:
-            tiled = np.tile(np.asarray(image.convert("L")), (2, 2))
-            Image.fromarray(tiled.astype(np.uint8), mode="L").save(
-                output / f"masks/contact_{hole}_tr_cut.png"
-            )
+    for relative, pixels in contact_masks.items():
+        Image.fromarray((pixels * 255).astype(np.uint8), mode="L").save(output / relative)
 
     pairs = []
     for i, first in enumerate(electrode_rows):
@@ -225,14 +329,6 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
                 }
             )
 
-    steps = [
-        {
-            "step_id": "SOURCE_AFTER_TOP_CONDUCTOR",
-            "lands_after_layer": source_layer,
-            "surface_model": "flat",
-            "fab_distribution_layer": "ASSUMED_SYNTHETIC_SOURCE",
-        }
-    ]
     manifest = {
         "schema_version": "2.0",
         "product_id": "SYN_LAYOUT_2X2",
@@ -240,7 +336,7 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
         "design_version": "ASSUMED_01",
         "design_lineage_id": "SYNTHETIC_FIXTURE",
         "fab_id": "ASSUMED_NO_FAB_DATA",
-        "is_synthetic": True,
+        "is_synthetic": settings is None or settings["profile"] == "synthetic",
         "coordinate_system": {
             "origin": "upper_left",
             "x_direction": "right",
@@ -261,7 +357,7 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
         "open_applicable_steps_by_layer": {
             name: [] for contact in contacts for name in (contact["lower"], contact["upper"])
         },
-        "particle_sizes_um": [1.0],
+        "particle_sizes_um": settings["particle_sizes_um"] if settings else [1.0],
         "embedding_depth_um": 0.0,
         "contact_margin_um": 0.0,
         "legacy_kernel": {"size": 5, "shape": "square", "iterations": "round"},
@@ -271,13 +367,14 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     report = {
-        "manifest": str(output / "product.yaml"),
+        "manifest": str(final_output / "product.yaml"),
         "electrodes": len(electrode_rows),
         "nets": len({row["net_id"] for row in electrode_rows}),
         "contacts": len(contact_rows),
         "classified_pairs": len(pairs),
         "pair_policy": "all unordered different-net electrode pairs; no silent exclusions",
         "shape_px": meta["output_shape_px"],
+        "holes": hole_count,
     }
     (output / "adapter-report.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
@@ -291,7 +388,20 @@ def export_particle_sim(extraction_dir: str | Path, output_dir: str | Path) -> d
             "no ROI-boundary terminals declared; edge cuts remain open-boundary limited"
         ),
         "particle_sim_periodicity": "not supported; output is a 2x2 finite image",
-        "particle_source_lands_after_layer": source_layer,
+        "particle_source_lands_after_layer": source_layer if settings is None else None,
+        "particle_source_lands_after_layers": [step["lands_after_layer"] for step in steps],
+        "profile": settings["profile"] if settings else "legacy",
+        "particle_sizes_um": settings["particle_sizes_um"] if settings else [1.0],
+        "process_stack_source": "explicit_config" if settings else "assumed_legacy",
+        "process_stack_conversion": (
+            "hole rows are simulator non-patterned inorganic films; conductor raw layer_masks "
+            "remain topography inputs"
+        ),
+        "source_stages": settings["source_stages"] if settings else [],
+        "surface_semantics": (
+            "flat_film_approximation_unsupported" if settings and contacts else "legacy_flat"
+        ),
+        "contact_holes": hole_provenance,
         "unsupported_contact_topologies": [
             issue
             for issue in meta.get("issues", [])
