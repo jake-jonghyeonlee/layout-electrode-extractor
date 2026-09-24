@@ -212,7 +212,8 @@ Then verify from that repository with `.venv/bin/python -m pytest -q tests`,
 The [sparse CNO benchmark](outputs/v5-integration-20260924/cno-sparse-bench/REPORT.md)
 measures three real CNT1 links at 1, 30, 40 and 50 µm and all 32 sizes on one
 225-pixel hole. The [refreshed bounded geometry result](outputs/v5-integration-20260924/i1-latest/e3-sparse-geometry-probe/geometry-probe.json)
-contains 12 actual short maps and 12 actual CNO maps from the latest export, with a
+and [candidate provenance](outputs/v5-integration-20260924/i1-latest/e3-sparse-geometry-probe/provenance.json)
+record 12 actual short maps and 12 actual CNO maps from the latest export, with a
 synthetic open map at 1 µm. It ran in 6.81 seconds with 844 MB maximum RSS. That
 synthetic open map is not an actual open-kernel result. General circuit-open behaviour,
 the full pair-by-size sweep, and fabrication physics are unverified; the central-window
