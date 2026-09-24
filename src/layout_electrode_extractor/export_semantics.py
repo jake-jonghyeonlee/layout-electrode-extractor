@@ -261,6 +261,28 @@ def mask_diagnostics(source: Path, meta: dict, settings: dict | None) -> dict:
         for a, b in combinations(conductors, 2)
         if np.any(raw[a] & raw[b])
     ]
+    metal_over_tr = []
+    for layer in conductors:
+        if layers[layer].get("role") != "METAL":
+            continue
+        labels, count = ndimage.label(raw[layer])
+        for component in range(1, count + 1):
+            pixels = labels == component
+            overlap = pixels & tr
+            if not np.any(overlap):
+                continue
+            y, x = np.argwhere(overlap)[0]
+            metal_over_tr.append(
+                {
+                    "code": "metal_over_tr",
+                    "layer": layer,
+                    "raw_component": component,
+                    "overlap_seed_xy": [int(x), int(y)],
+                    "raw_pixels": int(pixels.sum()),
+                    "tr_overlap_pixels": int(overlap.sum()),
+                    "policy": "allow_geometry_observation_only",
+                }
+            )
     stages = []
     stack_order = (
         {row["id"]: index for index, row in enumerate(settings["process_stack"])}
@@ -290,6 +312,7 @@ def mask_diagnostics(source: Path, meta: dict, settings: dict | None) -> dict:
     return {
         "all_layer_tr_cut": summaries,
         "raw_conductor_overlaps": overlaps,
+        "metal_over_tr": metal_over_tr,
         "source_stage_mask_diagnostics": stages,
         "raw_overlap_interpretation": "observation_only; no process short inferred",
     }

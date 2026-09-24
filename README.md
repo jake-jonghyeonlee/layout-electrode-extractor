@@ -127,6 +127,21 @@ is inferred from equal net IDs. With no explicit path or relation, the report st
 source stage's raw and cut mask counts, and observed raw conductor overlaps. Raw overlaps
 are geometry observations and do not establish a process short. The full cut CNT hole count
 is preserved for downstream CNO thresholds; effective endpoint overlap is recorded separately.
+`physical_hole_diagnostics` has one row per physical raw CNT/VIA component and 2×2 tile,
+keyed by `hole_layer`, `raw_component`, `seed`, `tile_xy`, and declared endpoints. Each row
+gives raw, cut, TR-removed, and effective pixels; raw and cut enclosure counts and fractions
+for both endpoints; and raw and cut intersections with every other conductor, including
+zero counts. The CNO denominator is the **full cut hole**, not the effective overlap.
+Current configured export requires raw=cut so a TR-hit hole cannot silently shrink that
+denominator. It rejects `hole_in_tr` and `hole_through_intermediate_conductor` with the
+component, seed, pair, and offending layer in the error before publishing any output.
+These are export diagnostics; `validate-input` does not establish that the installed
+simulator implements the planned 50% full-hole CNO rule.
+An undeclared conductor outside the endpoint stack interval is recorded as
+`undeclared_conductor_raw_intersection`; it is an observation, not a fabricated short.
+`mask_diagnostics.metal_over_tr` separately records raw metal components crossing TR and
+allows them because the all-layer cut removes the intersection. Legacy export retains its
+previous permissive behavior and records hole diagnostic codes in the sidecar for review.
 
 For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0
 manifest with:

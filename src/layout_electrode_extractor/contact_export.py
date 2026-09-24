@@ -37,10 +37,184 @@ def _check_four_partition(mask: np.ndarray, layer: str, connectivity: int) -> No
             raise ManifestError(f"{layer}: 8-connectivity merges distinct 4-connected holes")
 
 
+def _validate_hole_rows(meta: dict, contacts: list[dict]) -> None:
+    source = meta.get("contact_holes")
+    if not isinstance(source, dict):
+        raise ManifestError("missing raw hole provenance")
+    shared = {"layer", "raw_component", "contact_rule_index", "lower", "upper"}
+    for kind, required in (
+        ("raw_components", shared | {"seed"}),
+        ("components", shared | {"cut_component"}),
+    ):
+        rows = source.get(kind)
+        if not isinstance(rows, list):
+            raise ManifestError(f"missing {kind} hole provenance")
+        for row in rows:
+            if not isinstance(row, dict) or not required <= row.keys():
+                raise ManifestError(f"malformed {kind} hole provenance")
+            index = row["contact_rule_index"]
+            if type(index) is not int or not 0 <= index < len(contacts):
+                raise ManifestError(f"invalid {kind} contact_rule_index")
+            if type(row["raw_component"]) is not int or row["raw_component"] < 1:
+                raise ManifestError(f"invalid {kind} raw hole provenance component")
+            if kind == "components" and (
+                type(row["cut_component"]) is not int or row["cut_component"] < 1
+            ):
+                raise ManifestError("invalid cut hole provenance component")
+
+
+def diagnose_physical_holes(
+    source: Path, meta: dict, contacts: list[dict], *, strict: bool
+) -> list[dict]:
+    """Measure each raw physical hole without treating overlap as process connectivity.
+
+    The full cut hole is the CNO denominator. Current strict exports require
+    raw=cut; raw, cut, and effective areas remain separate observations. A
+    damaged hole or intermediate conductor intersection is rejected before
+    a simulator input can be published.
+    """
+    _validate_hole_rows(meta, contacts)
+    shape = tuple(meta["unit_shape_px"])
+    tr = _mask(source / meta["tr_union_path"], tuple(2 * n for n in shape))[: shape[0], : shape[1]]
+    layers = {row["id"]: row for row in meta["layers"]}
+    raw = {name: _mask(source / row["raw_path"], shape) for name, row in layers.items()}
+    cut = {name: _mask(source / row["cut_path"], shape) for name, row in layers.items()}
+    rules = {index: row for index, row in enumerate(contacts)}
+    source_rows = meta["contact_holes"]["raw_components"]
+    declared = {(row["layer"], row["raw_component"]): row for row in source_rows}
+    if strict and len(declared) != len(source_rows):
+        raise ManifestError("duplicate raw hole provenance")
+    order = {name: index for index, name in enumerate(meta["stack"])}
+    diagnostics = []
+    for hole in sorted({row["layer"] for row in contacts}):
+        labels, count = ndimage.label(raw[hole], _FOUR)
+        for component in range(1, count + 1):
+            key = (hole, component)
+            if key not in declared:
+                raise ManifestError(
+                    f"missing raw hole provenance: {hole} raw_component={component}"
+                )
+            source_row = declared[key]
+            rule_index = source_row.get("contact_rule_index")
+            if type(rule_index) is not int or rule_index not in rules:
+                raise ManifestError(
+                    f"{hole}: raw hole provenance has invalid contact_rule_index "
+                    f"for raw_component={component}"
+                )
+            rule = rules[rule_index]
+            lower, upper = rule["lower"], rule["upper"]
+            if strict and (source_row["layer"], source_row["lower"], source_row["upper"]) != (
+                hole,
+                lower,
+                upper,
+            ):
+                raise ManifestError(f"{hole}: hole provenance does not match its declared rule")
+            pixels = labels == component
+            raw_area = int(pixels.sum())
+            cut_area = int((pixels & cut[hole]).sum())
+            removed = int((pixels & tr).sum())
+            if cut_area + removed != raw_area:
+                raise ManifestError(
+                    f"raw_cut_hole_mismatch: {hole} raw_component={component} "
+                    f"seed={source_row['seed']} raw={raw_area} cut={cut_area} removed={removed}"
+                )
+            if removed and strict:
+                raise ManifestError(
+                    f"hole_in_tr: {hole} raw_component={component} seed={source_row['seed']} "
+                    f"raw={raw_area} cut={cut_area} removed={removed}; "
+                    "partial or complete TR cut of a physical hole"
+                )
+            intersects = []
+            for conductor in meta["stack"]:
+                if conductor in (lower, upper):
+                    continue
+                hits = int((pixels & raw[conductor]).sum())
+                relation = (
+                    "intermediate"
+                    if order[lower] < order[conductor] < order[upper]
+                    else "undeclared"
+                )
+                intersects.append(
+                    {
+                        "layer": conductor,
+                        "relation": relation,
+                        "raw_intersection_pixels": hits,
+                        "cut_intersection_pixels": int((pixels & cut[conductor]).sum()),
+                    }
+                )
+            offending = next(
+                (
+                    item
+                    for item in intersects
+                    if item["relation"] == "intermediate" and item["raw_intersection_pixels"]
+                ),
+                None,
+            )
+            codes = []
+            if removed:
+                codes.append("hole_in_tr")
+            if any(
+                item["relation"] == "undeclared" and item["raw_intersection_pixels"]
+                for item in intersects
+            ):
+                codes.append("undeclared_conductor_raw_intersection")
+            if offending:
+                code = "hole_through_intermediate_conductor"
+                codes.append(code)
+                if strict:
+                    raise ManifestError(
+                        f"{code}: {hole} raw_component={component} seed={source_row['seed']} "
+                        f"declared={lower}->{upper} intermediate_layer={offending['layer']} "
+                        f"raw_intersection_pixels={offending['raw_intersection_pixels']}"
+                    )
+            for ty in range(2):
+                for tx in range(2):
+                    lower_raw = int((pixels & raw[lower]).sum())
+                    upper_raw = int((pixels & raw[upper]).sum())
+                    lower_cut = int((pixels & cut[lower]).sum())
+                    upper_cut = int((pixels & cut[upper]).sum())
+                    effective = int((pixels & cut[hole] & cut[lower] & cut[upper]).sum())
+                    diagnostics.append(
+                        {
+                            "hole_layer": hole,
+                            "raw_component": component,
+                            "seed": source_row["seed"],
+                            "tile_xy": [tx, ty],
+                            "contact_rule_index": source_row["contact_rule_index"],
+                            "lower_layer": lower,
+                            "upper_layer": upper,
+                            "raw_pixels": raw_area,
+                            "cut_pixels": cut_area,
+                            "tr_removed_pixels": removed,
+                            "effective_pixels": effective,
+                            "lower_enclosure": {
+                                "raw_pixels": lower_raw,
+                                "cut_pixels": lower_cut,
+                                "raw_fraction": lower_raw / raw_area,
+                                "cut_fraction": lower_cut / cut_area if cut_area else 0.0,
+                            },
+                            "upper_enclosure": {
+                                "raw_pixels": upper_raw,
+                                "cut_pixels": upper_cut,
+                                "raw_fraction": upper_raw / raw_area,
+                                "cut_fraction": upper_cut / cut_area if cut_area else 0.0,
+                            },
+                            "other_conductor_intersections": intersects,
+                            "diagnostic_codes": codes,
+                        }
+                    )
+    if strict and set(declared) != {
+        (row["hole_layer"], row["raw_component"]) for row in diagnostics
+    }:
+        raise ManifestError("missing/extra raw hole provenance")
+    return diagnostics
+
+
 def prepare_contacts(
     source: Path, meta: dict, contacts: list[dict], *, mixed: bool
 ) -> tuple[list[dict], dict[str, np.ndarray], list[dict]]:
     """Return contact rows/masks/provenance only after complete geometry validation."""
+    _validate_hole_rows(meta, contacts)
     unit_shape = tuple(meta["unit_shape_px"])
     output_shape = tuple(meta["output_shape_px"])
     if output_shape != tuple(2 * value for value in unit_shape):
@@ -58,7 +232,25 @@ def prepare_contacts(
         cut[layer] = _mask(source / layers[layer]["cut_path"], unit_shape)
     for hole in {row["layer"] for row in contacts}:
         if np.any(raw[hole] & unit_tr):
-            raise ManifestError(f"{hole}: partial or complete TR cut of a physical hole")
+            labels, _ = ndimage.label(raw[hole], _FOUR)
+            y, x = np.argwhere(raw[hole] & unit_tr)[0]
+            component = int(labels[y, x])
+            raw_row = next(
+                (
+                    row
+                    for row in meta["contact_holes"]["raw_components"]
+                    if row["layer"] == hole and row["raw_component"] == component
+                ),
+                None,
+            )
+            raw_pixels = int((labels == component).sum())
+            cut_pixels = int(((labels == component) & cut[hole]).sum())
+            raise ManifestError(
+                f"hole_in_tr: {hole} raw_component={component} "
+                f"seed={raw_row.get('seed') if raw_row else None} raw={raw_pixels} "
+                f"cut={cut_pixels} removed={raw_pixels - cut_pixels}; "
+                "partial or complete TR cut of a physical hole"
+            )
         if (
             np.any(raw[hole][0])
             or np.any(raw[hole][-1])

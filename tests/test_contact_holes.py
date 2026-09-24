@@ -87,6 +87,12 @@ def test_single_seeded_pair_can_export(tmp_path: Path) -> None:
     product = json.loads((tmp_path / "sim" / "product.yaml").read_text())
     assert len(product["contacts"]) == 1
     assert product["contacts"][0]["lower_layer"] == "ACTIVE"
+    diagnostics = json.loads((tmp_path / "sim" / "adapter-provenance.json").read_text())[
+        "physical_hole_diagnostics"
+    ]
+    assert len(diagnostics) == 4
+    assert all(row["raw_pixels"] == 3 and row["cut_pixels"] == 2 for row in diagnostics)
+    assert all("hole_in_tr" in row["diagnostic_codes"] for row in diagnostics)
 
 
 @pytest.mark.parametrize(

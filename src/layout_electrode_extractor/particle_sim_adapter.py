@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 from scipy import ndimage
 
-from .contact_export import prepare_contacts
+from .contact_export import diagnose_physical_holes, prepare_contacts
 from .export_config import load_export_config, product_stack
 from .export_semantics import circuit_declarations, mask_diagnostics
 from .schema import ManifestError
@@ -199,11 +199,13 @@ def export_particle_sim(
         contact_rows, contact_masks, hole_provenance = prepare_contacts(
             source, meta, contacts, mixed=True
         )
+        hole_diagnostics = diagnose_physical_holes(source, meta, contacts, strict=True)
         hole_count = len(hole_provenance)
     else:
         contact_rows, contact_masks, hole_provenance, hole_count = _legacy_contacts(
             source, contacts
         )
+        hole_diagnostics = diagnose_physical_holes(source, meta, contacts, strict=False)
     for row in contact_rows:
         contact_id = row["contact_id"]
         if not _CONTACT_ID.fullmatch(contact_id) or "__" in contact_id or ":" in contact_id:
@@ -248,6 +250,7 @@ def export_particle_sim(
             contact_rows,
             contact_masks,
             hole_provenance,
+            hole_diagnostics,
             hole_count,
             steps,
             settings,
@@ -273,6 +276,7 @@ def _write_export(
     contact_rows: list[dict],
     contact_masks: dict[str, np.ndarray],
     hole_provenance: list[dict],
+    hole_diagnostics: list[dict],
     hole_count: int,
     steps: list[dict],
     settings: dict | None,
@@ -406,6 +410,7 @@ def _write_export(
             "flat_film_approximation_unsupported" if settings and contacts else "legacy_flat"
         ),
         "contact_holes": hole_provenance,
+        "physical_hole_diagnostics": hole_diagnostics,
         "circuit": circuit_sidecar,
         "mask_diagnostics": diagnostics,
         "unsupported_contact_topologies": [

@@ -712,6 +712,39 @@ def test_configured_mixed_export_partitions_all_holes(
     assert product["particle_sizes_um"] == [*range(1, 31), 40, 50]
     assert [row["hole_layer"] for row in product["contacts"]] == ["CNT1", "CNT1", "CNT2"]
     assert len(provenance["contact_holes"]) == 100
+    diagnostics = provenance["physical_hole_diagnostics"]
+    assert len(diagnostics) == 100
+    assert (
+        len(
+            {
+                (row["hole_layer"], row["raw_component"], tuple(row["tile_xy"]))
+                for row in diagnostics
+            }
+        )
+        == 100
+    )
+    assert {row["effective_pixels"] for row in diagnostics} == {120, 195, 225}
+    assert all(row["raw_pixels"] == row["cut_pixels"] == 225 for row in diagnostics)
+    assert all(row["tr_removed_pixels"] == 0 for row in diagnostics)
+    assert all(
+        {item["layer"] for item in row["other_conductor_intersections"]}
+        == {item["layer_name"] for item in product["layer_masks"]}
+        - {row["lower_layer"], row["upper_layer"]}
+        for row in diagnostics
+    )
+    assert all(
+        row["lower_enclosure"]["cut_pixels"] >= row["effective_pixels"]
+        and row["upper_enclosure"]["cut_pixels"] >= row["effective_pixels"]
+        and row["lower_enclosure"]["cut_fraction"] == row["lower_enclosure"]["cut_pixels"] / 225
+        and row["upper_enclosure"]["cut_fraction"] == row["upper_enclosure"]["cut_pixels"] / 225
+        for row in diagnostics
+    )
+    assert all(
+        item["raw_intersection_pixels"] == 0
+        for row in diagnostics
+        for item in row["other_conductor_intersections"]
+        if item["relation"] == "intermediate"
+    )
     assert {row["raw_pixels"] for row in provenance["contact_holes"]} == {225}
     assert {row["cut_pixels"] for row in provenance["contact_holes"]} == {225}
     assert all(0 < row["effective_pixels"] <= 225 for row in provenance["contact_holes"])
@@ -747,6 +780,56 @@ def test_configured_mixed_export_partitions_all_holes(
                 union |= mask
         cut = np.asarray(Image.open(mixed_extraction / "cut_layers" / f"{hole}.png")) > 0
         assert np.array_equal(union, np.tile(cut, (2, 2)))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("hole_in_tr", "hole_in_tr"),
+        ("hole_in_tr_full", "hole_in_tr"),
+        ("metal_over_tr", "metal_over_tr"),
+        ("hole_through_gat2", "hole_through_intermediate_conductor"),
+    ],
+)
+def test_per_hole_adversarial_geometry_has_distinct_policy(
+    tmp_path: Path, mutation: str, expected: str
+) -> None:
+    input_manifest = Path(make_synthetic(tmp_path / "input")["manifest"])
+    layer = {
+        "hole_in_tr": "GAT1",
+        "hole_in_tr_full": "GAT1",
+        "metal_over_tr": "METAL1",
+        "hole_through_gat2": "GAT2",
+    }[mutation]
+    x, y = (100, 100) if mutation == "metal_over_tr" else (100, 55)
+    path = input_manifest.parent / "masks" / f"{layer}.png"
+    mask = np.asarray(Image.open(path)).copy()
+    assert mask[y, x] == 0
+    if mutation == "hole_in_tr_full":
+        mask[y - 7 : y + 8, x - 7 : x + 8] = 255
+    else:
+        mask[y, x] = 255
+    Image.fromarray(mask).save(path)
+    extraction = tmp_path / "extraction"
+    extract(input_manifest, extraction)
+    output = tmp_path / "product"
+    config = _write_config(tmp_path, _synthetic_config())
+    if mutation == "metal_over_tr":
+        export_particle_sim(extraction, output, config)
+        sidecar = json.loads((output / "adapter-provenance.json").read_text())
+        hits = sidecar["mask_diagnostics"]["metal_over_tr"]
+        assert any(row["code"] == expected and row["tr_overlap_pixels"] >= 1 for row in hits)
+        assert len(sidecar["physical_hole_diagnostics"]) == 100
+    else:
+        with pytest.raises(ManifestError, match=expected) as error:
+            export_particle_sim(extraction, output, config)
+        assert "CNT1 raw_component=" in str(error.value)
+        assert "seed=[100, 55]" in str(error.value)
+        if mutation == "hole_in_tr_full":
+            assert "cut=0" in str(error.value)
+        if mutation == "hole_through_gat2":
+            assert "intermediate_layer=GAT2" in str(error.value)
+        assert not output.exists()
 
 
 @pytest.mark.parametrize(
@@ -805,6 +888,8 @@ def test_synthetic_size_subset_and_measured_contact_rejection(
         ("endpoint", "wrong or inconsistent hole endpoints"),
         ("rule_endpoint", "unsupported contact topology"),
         ("rule_index", "does not match its declared rule"),
+        ("invalid_rule_index", "invalid raw_components contact_rule_index"),
+        ("missing_seed", "malformed raw_components hole provenance"),
         ("extra", "missing or unknown hole layers"),
         ("partial_tr", "partial or complete TR cut"),
         ("edge", "edge"),
@@ -839,6 +924,10 @@ def test_corrupt_hole_or_electrode_rejected_before_output(
     elif mutation == "rule_index":
         metadata["contact_holes"]["raw_components"][0]["contact_rule_index"] = 2
         metadata["contact_holes"]["components"][0]["contact_rule_index"] = 2
+    elif mutation == "invalid_rule_index":
+        metadata["contact_holes"]["raw_components"][0]["contact_rule_index"] = 99
+    elif mutation == "missing_seed":
+        metadata["contact_holes"]["raw_components"][0].pop("seed")
     elif mutation == "extra":
         extra = metadata["contact_holes"]["raw_components"][0].copy()
         extra["layer"] = "UNKNOWN_LAYER"
