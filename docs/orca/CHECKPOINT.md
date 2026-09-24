@@ -1,5 +1,11 @@
 # Orca checkpoint
 
+## Particle-sim revision plan v4 and boundary cost, 2026-09-24
+
+- Same Run `run_5463d205f39d`, coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2), direct docs Task `task_fb3ee3d614e3`, baseline `0a71818`; no implementation Dispatch or new review worker. v3 retained, v4 `docs/orca/PARTICLE-SIM-REVISION-PLAN-v4-20260924.md`. Sibling particle-sim read-only, unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched.
+- User resolved dedup scope: independently calculate raw CNO/open; same particle sample/location/size/shape/source step and **same confirmed connection** only are duplicates; final CNO wins. Preserve other connections' open and every short, plus raw/dedup results. No unresolved dedup question remains. Physical process inputs, net map and particle-size distribution remain future inputs.
+- Read-only boundary/cost assessment: 1200 ROI central `[300,900)²` has 300 px = 30 µm margin each side. Current CNO crops a hole-local correlation window; short uses distance and radius+margin; open may depend on global path connectivity despite local particle damage. At full 120 µm ROI, a width-r edge band occupies 3.3/16.0/30.6/75.0% for example r=1/5/10/30 µm; these are geometric exposure ratios, **not error probabilities**. One full-map pixel/memory count at 1200/1800/2400 side scales 1:2.25:4; wall-time unmeasured and may differ. Existing CNO full-cover code cannot benchmark the new 50% rule. Recommendation: keep 2×2 plus central aggregation if full local support and nonlocal open topology are verified; otherwise selective stable-ID halo comparison or explicit unsupported condition. Fresh exact Opus 5.5 high plan review remains required before implementation.
+
 ## Particle-sim revision plan v3, 2026-09-24
 
 - Same Run `run_5463d205f39d`, sole coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2). Saved direct documentation Task `task_dbf4f760e6be` on baseline `bbda927`; no implementation Dispatch or review worker. v2 remains preserved; v3 is `docs/orca/PARTICLE-SIM-REVISION-PLAN-v3-20260924.md`. Particle-sim checkout is read-only and unrelated untracked `docs/orca/FINAL-REPORT.ko.md` is untouched.
