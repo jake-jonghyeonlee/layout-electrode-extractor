@@ -89,8 +89,44 @@ and 50 µm. An explicit synthetic size list must be a strictly increasing subset
 diameters. `adapter-provenance.json` records the selected list, stage semantics, and each
 hole's raw, cut, and effective pixel counts. The CNT open stages use a flat-film approximation;
 they establish API and geometry compatibility, not physical CNO validity. A measured config
-with contacts is rejected because particle-sim cannot yet model the open CNT surface; a
-contact-free measured config awaits the P2 net-mapping extension.
+with contacts is rejected because particle-sim cannot yet model the open CNT surface.
+
+The config may also declare `net_map`, an object mapping **every** extracted electrode ID
+from `manifest.json` to a confirmed circuit net ID. Several extracted IDs may map to one net;
+their electrode masks and IDs stay separate. Without `net_map`, the manifest still uses
+extracted IDs as provisional simulator `net_id` values, and `adapter-report.json` reports
+`declared_circuit_nets: 0` and `provisional_extracted_nets` separately. These provisional
+pairs are geometry candidates, not confirmed circuit shorts.
+
+Optional `excluded_pairs` is a list of `{electrode_a, electrode_b, reason}` objects using
+layer-specific exported electrode IDs (for example, `E0001_GAT1`). Every unordered electrode
+pair gets a stable ID and an included or excluded status in
+`adapter-provenance.json` → `circuit.pair_inventory`; same-net pairs receive the explicit
+`same_declared_net` or `same_provisional_net` reason. Different-net exclusions require a
+nonblank reason and are also emitted in the simulator manifest. Omitted exclusions mean all
+different-net pairs remain included.
+
+Explicit `open_paths` require a complete `net_map`. Each entry has `path_id`, `electrode`,
+`circuit_net_id`, `circuit_connection_id`, two distinct `terminal_a_yx_px` and
+`terminal_b_yx_px` coordinates on the same finite electrode mask, and a nonempty
+`applicable_particle_source_steps` list. The coordinates are `[y, x]` in the 1200×1200
+export. The adapter checks both terminals and their finite-mask connection, and emits
+`fallback: error`. It never derives terminals from ROI edges or enables auto-open;
+`open_applicable_steps_by_layer` stays empty. A circuit path spanning disconnected finite
+mask pieces is unsupported by this explicit terminal contract.
+
+Optional `cno_open_relations` entries are `{cno_link_id, open_path_id,
+circuit_connection_id}`. `cno_link_id` must match an exact `cno:<contact_id>:<lower_electrode>__<upper_electrode>`
+link listed on a contact hole in the provenance sidecar; the declared circuit connection,
+net, and applicable source steps must agree. These relations are validated and stored only
+in the sidecar because the current simulator manifest has no relationship field. No relation
+is inferred from equal net IDs. With no explicit path or relation, the report states
+`unsupported_unconfigured_no_explicit_terminals`.
+
+`adapter-provenance.json` also records all-layer raw/cut/TR pixel counts, each configured
+source stage's raw and cut mask counts, and observed raw conductor overlaps. Raw overlaps
+are geometry observations and do not establish a process short. The full cut CNT hole count
+is preserved for downstream CNO thresholds; effective endpoint overlap is recorded separately.
 
 For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0
 manifest with:
@@ -101,8 +137,9 @@ manifest with:
 ```
 
 The adapter writes raw repeated conductor masks for topography and passes TR-cut CNT/VIA masks
-with source extraction provenance. Each per-layer mask exported from one extracted electrode
-uses that electrode ID as its shared `net_id`. A finite contact is particle-sim compatible only
+with source extraction provenance. Per-layer masks from one extracted electrode retain one
+shared `net_id`: the declared circuit net when mapped, or its provisional extracted ID.
+A finite contact is particle-sim compatible only
 when it touches exactly one lower and one upper electrode of the same net; unsupported contact
 components are listed in `adapter-provenance.json` and validation may reject them. The adapter
 classifies every unordered different-net electrode pair: same-layer pairs are `lateral_short`,

@@ -15,6 +15,7 @@ from scipy import ndimage
 
 from .contact_export import prepare_contacts
 from .export_config import load_export_config, product_stack
+from .export_semantics import circuit_declarations, mask_diagnostics
 from .schema import ManifestError
 
 _CONDUCTOR_ROLES = {"GAT", "ACTIVE", "OACTIVE", "METAL", "CONDUCTOR"}
@@ -298,6 +299,10 @@ def _write_export(
             electrode_by_layer[layer].append(row)
             electrode_masks[path] = source / info["path"]
 
+    pairs, excluded_pairs, open_paths, circuit_sidecar = circuit_declarations(
+        source, meta, electrode_rows, hole_provenance, settings
+    )
+    diagnostics = mask_diagnostics(source, meta, settings)
     masks_dir = output / "masks"
     masks_dir.mkdir()
     layer_mask_rows = []
@@ -312,22 +317,6 @@ def _write_export(
 
     for relative, pixels in contact_masks.items():
         Image.fromarray((pixels * 255).astype(np.uint8), mode="L").save(output / relative)
-
-    pairs = []
-    for i, first in enumerate(electrode_rows):
-        for second in electrode_rows[i + 1 :]:
-            if first["net_id"] == second["net_id"]:
-                continue
-            pair_id = f"PAIR_{len(pairs) + 1:06d}"
-            same_layer = first["layer_name"] == second["layer_name"]
-            pairs.append(
-                {
-                    "pair_id": pair_id,
-                    "electrode_a": first["electrode_id"],
-                    "electrode_b": second["electrode_id"],
-                    "failure_mode": "lateral_short" if same_layer else "vertical_short",
-                }
-            )
 
     manifest = {
         "schema_version": "2.0",
@@ -351,8 +340,8 @@ def _write_export(
         "electrodes": electrode_rows,
         "particle_source_steps": steps,
         "electrode_pairs": pairs,
-        "excluded_electrode_pairs": [],
-        "open_paths": [],
+        "excluded_electrode_pairs": excluded_pairs,
+        "open_paths": open_paths,
         "contacts": contact_rows,
         "open_applicable_steps_by_layer": {
             name: [] for contact in contacts for name in (contact["lower"], contact["upper"])
@@ -370,9 +359,24 @@ def _write_export(
         "manifest": str(final_output / "product.yaml"),
         "electrodes": len(electrode_rows),
         "nets": len({row["net_id"] for row in electrode_rows}),
+        "declared_circuit_nets": (
+            len({row["net_id"] for row in electrode_rows})
+            if circuit_sidecar["net_status"] == "declared"
+            else 0
+        ),
+        "provisional_extracted_nets": (
+            len({row["net_id"] for row in electrode_rows})
+            if circuit_sidecar["net_status"] != "declared"
+            else 0
+        ),
         "contacts": len(contact_rows),
         "classified_pairs": len(pairs),
-        "pair_policy": "all unordered different-net electrode pairs; no silent exclusions",
+        "excluded_pairs": len(excluded_pairs),
+        "total_pair_inventory": len(circuit_sidecar["pair_inventory"]),
+        "net_status": circuit_sidecar["net_status"],
+        "open_path_status": circuit_sidecar["open_path_status"],
+        "open_paths": len(open_paths),
+        "pair_policy": "every unordered electrode pair included or excluded with reason",
         "shape_px": meta["output_shape_px"],
         "holes": hole_count,
     }
@@ -402,6 +406,8 @@ def _write_export(
             "flat_film_approximation_unsupported" if settings and contacts else "legacy_flat"
         ),
         "contact_holes": hole_provenance,
+        "circuit": circuit_sidecar,
+        "mask_diagnostics": diagnostics,
         "unsupported_contact_topologies": [
             issue
             for issue in meta.get("issues", [])

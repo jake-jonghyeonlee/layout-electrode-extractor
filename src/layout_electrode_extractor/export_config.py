@@ -53,7 +53,7 @@ def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> di
             "source_stages",
             "contact_applicable_stages",
         },
-        {"particle_sizes_um"},
+        {"particle_sizes_um", "net_map", "excluded_pairs", "open_paths", "cno_open_relations"},
         "config",
     )
     if type(config["schema_version"]) is not int or config["schema_version"] != 1:
@@ -61,6 +61,11 @@ def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> di
     profile = config["profile"]
     if not isinstance(profile, str) or profile not in {"synthetic", "measured"}:
         raise ManifestError("config profile must be synthetic or measured")
+    for field in ("excluded_pairs", "open_paths", "cno_open_relations"):
+        if field in config and not isinstance(config[field], list):
+            raise ManifestError(f"{field} must be a list")
+    if "net_map" in config and not isinstance(config["net_map"], dict):
+        raise ManifestError("net_map must be an object")
     if not isinstance(config["process_stack"], list) or not config["process_stack"]:
         raise ManifestError("process_stack must be a nonempty list")
     if "physical_stack" not in meta:
@@ -180,8 +185,8 @@ def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> di
             raise ManifestError(f"{hole}: require exactly its CNT open approximation stage")
     if profile == "measured" and contacts:
         raise ManifestError("measured CNT open stage/contact physics is unsupported")
-    if profile == "measured":
-        raise ManifestError("measured net mapping is unsupported until the P2 config extension")
+    if profile == "measured" and "net_map" not in config:
+        raise ManifestError("measured profile requires an explicit net_map")
     sizes = config.get("particle_sizes_um", PARTICLE_SIZES if profile == "synthetic" else None)
     if not isinstance(sizes, list) or not sizes:
         raise ManifestError("particle_sizes_um must be a nonempty explicit list")

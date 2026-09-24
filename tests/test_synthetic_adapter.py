@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections import Counter
+from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
 
@@ -541,6 +542,154 @@ def _write_config(tmp_path: Path, config: dict) -> Path:
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config))
     return path
+
+
+@pytest.fixture(scope="module")
+def circuit_case(mixed_extraction: Path, tmp_path_factory: pytest.TempPathFactory) -> dict:
+    root = tmp_path_factory.mktemp("circuit-case")
+    baseline = root / "baseline"
+    config_path = root / "config.json"
+    config_path.write_text(json.dumps(_synthetic_config()))
+    export_particle_sim(mixed_extraction, baseline, config_path)
+    meta = json.loads((mixed_extraction / "manifest.json").read_text())
+    product = json.loads((baseline / "product.yaml").read_text())
+    provenance = json.loads((baseline / "adapter-provenance.json").read_text())
+    net_map = {row["id"]: f"NET_{row['id']}" for row in meta["electrodes"]}
+    first, second = list(net_map)[:2]
+    net_map[second] = net_map[first]
+    hole = provenance["contact_holes"][0]
+    electrode = next(
+        row for row in product["electrodes"] if row["electrode_id"] == hole["lower_electrode"]
+    )
+    mask = np.asarray(Image.open(baseline / electrode["path"])) > 0
+    points = np.argwhere(mask)[:2].tolist()
+    config = _synthetic_config()
+    config["net_map"] = net_map
+    config["open_paths"] = [
+        {
+            "path_id": "OPEN_1",
+            "electrode": electrode["electrode_id"],
+            "terminal_a_yx_px": points[0],
+            "terminal_b_yx_px": points[1],
+            "applicable_particle_source_steps": [f"SOURCE_{hole['hole_layer']}_OPEN"],
+            "circuit_connection_id": "CONNECTION_1",
+            "circuit_net_id": net_map[
+                electrode["electrode_id"].removesuffix(f"_{electrode['layer_name']}")
+            ],
+        }
+    ]
+    config["cno_open_relations"] = [
+        {
+            "cno_link_id": hole["cno_link_id"],
+            "open_path_id": "OPEN_1",
+            "circuit_connection_id": "CONNECTION_1",
+        }
+    ]
+    return {"config": config, "meta": meta, "baseline": baseline}
+
+
+def test_declared_circuit_map_pair_partition_and_explicit_open(
+    tmp_path: Path, mixed_extraction: Path, circuit_case: dict
+) -> None:
+    config = deepcopy(circuit_case["config"])
+    product = json.loads((circuit_case["baseline"] / "product.yaml").read_text())
+    candidates = [row["electrode_id"] for row in product["electrodes"]]
+    a, b = next(
+        (a, b)
+        for a in candidates
+        for b in candidates
+        if config["net_map"][a.rsplit("_", 1)[0]] != config["net_map"][b.rsplit("_", 1)[0]]
+    )
+    config["excluded_pairs"] = [
+        {"electrode_a": a, "electrode_b": b, "reason": "manual_bounded_probe"}
+    ]
+    output = tmp_path / "mapped"
+    report = export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    manifest = json.loads((output / "product.yaml").read_text())
+    sidecar = json.loads((output / "adapter-provenance.json").read_text())
+    circuit = sidecar["circuit"]
+    assert report["declared_circuit_nets"] == len(set(config["net_map"].values()))
+    assert report["provisional_extracted_nets"] == 0
+    assert len(circuit["pair_inventory"]) == 155 * 154 // 2
+    assert len({row["pair_id"] for row in circuit["pair_inventory"]}) == len(
+        circuit["pair_inventory"]
+    )
+    assert sum(row["status"] == "included" for row in circuit["pair_inventory"]) == len(
+        manifest["electrode_pairs"]
+    )
+    assert all(row["reason"] for row in circuit["pair_inventory"] if row["status"] == "excluded")
+    assert len(manifest["excluded_electrode_pairs"]) == 1
+    assert manifest["open_paths"][0]["fallback"] == "error"
+    assert all(not steps for steps in manifest["open_applicable_steps_by_layer"].values())
+    assert circuit["cno_open_relations"] == config["cno_open_relations"]
+    assert circuit["auto_open"] == "disabled"
+    assert {row["raw_pixels"] for row in sidecar["contact_holes"]} == {225}
+    assert {row["cut_pixels"] for row in sidecar["contact_holes"]} == {225}
+    assert len(sidecar["mask_diagnostics"]["all_layer_tr_cut"]) == 8
+    assert len(sidecar["mask_diagnostics"]["source_stage_mask_diagnostics"]) == 3
+    assert sidecar["mask_diagnostics"]["raw_conductor_overlaps"]
+    assert "no process short inferred" in sidecar["mask_diagnostics"]["raw_overlap_interpretation"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda c: c["net_map"].pop(next(iter(c["net_map"]))), "cover every"),
+        (lambda c: c["net_map"].update(UNKNOWN="NET_X"), "cover every"),
+        (lambda c: c["net_map"].update({next(iter(c["net_map"])): "BAD:NET"}), "safe ASCII"),
+        (
+            lambda c: c.update(
+                excluded_pairs=[
+                    {
+                        "electrode_a": "UNKNOWN",
+                        "electrode_b": c["open_paths"][0]["electrode"],
+                        "reason": "x",
+                    }
+                ]
+            ),
+            "unknown or identical",
+        ),
+        (
+            lambda c: c.update(
+                excluded_pairs=[
+                    {
+                        "electrode_a": c["open_paths"][0]["electrode"],
+                        "electrode_b": c["open_paths"][0]["electrode"],
+                        "reason": "x",
+                    }
+                ]
+            ),
+            "unknown or identical",
+        ),
+        (lambda c: c["open_paths"][0].update(terminal_a_yx_px=[0, 0]), "land on"),
+        (lambda c: c["open_paths"][0].update(circuit_net_id="WRONG"), "disagree"),
+        (lambda c: c["open_paths"][0].update(fallback="roi_boundary"), "unknown"),
+        (lambda c: c["open_paths"].append(c["open_paths"][0].copy()), "duplicate open path"),
+        (
+            lambda c: c["open_paths"][0].update(applicable_particle_source_steps=["BAD"]),
+            "source steps",
+        ),
+        (lambda c: c["cno_open_relations"][0].update(cno_link_id="cno:UNKNOWN"), "unknown"),
+        (lambda c: c["cno_open_relations"][0].update(open_path_id="UNKNOWN"), "unknown"),
+        (lambda c: c["cno_open_relations"][0].update(circuit_connection_id="OTHER"), "disagrees"),
+        (lambda c: c["cno_open_relations"].append(c["cno_open_relations"][0].copy()), "duplicate"),
+        (
+            lambda c: c["open_paths"][0].update(
+                applicable_particle_source_steps=["SOURCE_AFTER_METAL1"]
+            ),
+            "shared applicable",
+        ),
+    ],
+)
+def test_circuit_declarations_rejected_before_output(
+    tmp_path: Path, mixed_extraction: Path, circuit_case: dict, change, message: str
+) -> None:
+    config = deepcopy(circuit_case["config"])
+    change(config)
+    output = tmp_path / "invalid"
+    with pytest.raises(ManifestError, match=message):
+        export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    assert not output.exists()
 
 
 def test_configured_mixed_export_partitions_all_holes(
