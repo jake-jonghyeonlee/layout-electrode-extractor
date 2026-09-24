@@ -16,7 +16,7 @@
 
 ## 2. 사용자가 물은 “2×2 경계”의 정확한 뜻
 
-원본 unit 600×600을 가로·세로 두 개씩 놓은 계산 이미지는 좌표 `x,y=0…1199`이다. **내부 이음선**은 `x=599/600`, `y=599/600`; **2×2 외곽 경계**는 `x=0/1199`, `y=0/1199`이다. 추출기는 반복 배선이 내부 이음선을 지날 때도 별도 반복 인스턴스 ID를 보존한다. particle-sim은 이 1200×1200 이미지를 유한한 ROI로 받아 바깥쪽을 자동으로 주기 연결하지 않는다. 그러므로 외곽에서 잘린 CNT 홀이나 배선에 대해 원래 unit 밖의 다음 반복 복사본을 particle-sim이 보지 못할 수 있고, ROI 경계를 단자로 쓰는 open 판정도 별도 선택이다([auto_open.py:1–7](../../../particle-sim/src/particle_sim/failure/auto_open.py#L1-L7), [terminal 구성](../../../particle-sim/src/particle_sim/failure/auto_open.py#L43-L65)). 현재 fixture의 `open_applicable_steps_by_layer`는 빈 목록이라 자동 open을 켜지 않는다. **중앙 1-unit만 집계하고 주변 1-unit을 halo로 쓰는 안은 잠정 권장**이며, 정확한 평가 창·허용 입자 반지름·기여 면적은 아직 정하지 않았다. 유한 2×2 전체 집계나 별도 periodic simulation도 가능한 선택지다.
+원본 unit 600×600을 가로·세로 두 개씩 놓은 계산 이미지는 좌표 `x,y=0…1199`이다. **내부 이음선**은 `x=599/600`, `y=599/600`; **2×2 외곽 경계**는 `x=0/1199`, `y=0/1199`이다. 추출기는 반복 배선이 내부 이음선을 지날 때도 별도 반복 인스턴스 ID를 보존한다. particle-sim은 이 1200×1200 이미지를 유한한 ROI로 받아 바깥쪽을 자동으로 주기 연결하지 않는다. 그러므로 외곽에서 잘린 CNT 홀이나 배선에 대해 원래 unit 밖의 다음 반복 복사본을 particle-sim이 보지 못할 수 있고, ROI 경계를 단자로 쓰는 open 판정도 별도 선택이다([auto_open.py:1–7](../../../particle-sim/src/particle_sim/failure/auto_open.py#L1-L7), [terminal 구성](../../../particle-sim/src/particle_sim/failure/auto_open.py#L43-L65)). 현재 fixture의 `open_applicable_steps_by_layer`는 빈 목록이라 자동 open을 켜지 않는다. **중앙 `[300,900)×[300,900)` 600 px 창만 집계하는 안은 잠정 권장**이다. 이 창의 각 변에서 1200 px ROI 외곽까지의 여유는 **300 px = 30 µm = 0.5 unit**이다. 이는 창 밖의 주변 영역 전체가 1 unit 두께라는 뜻이 아니다. 입자 footprint·커널 지원 범위, 접점 홀 전체와 endpoint 유효 영역, CNO/open/short 판정이 참조하는 공간 범위, margin을 합쳐 외곽의 영향이 중앙 집계에 들어오지 않는지 따로 검증해야 한다. 입자 반지름만 `≤300 px`라는 조건으로 충분하다고 단정하지 않는다. 정확한 평가 창·허용 입력 범위·기여 면적은 아직 정하지 않았다. 유한 2×2 전체 집계나 별도 periodic simulation도 가능한 선택지다.
 
 ## 3. 코드상 현재 상태와 필요한 변화
 
@@ -35,7 +35,7 @@
 | 결정 | 선택지 | 잠정 권장과 구현 gate |
 | --- | --- | --- |
 | 50%의 분모 | A. 각 물리 CNT 홀의 전체 픽셀, B. 양 endpoint가 공통으로 겹치는 유효 픽셀, C. 여러 홀을 합친 면적 | **A를 잠정 권장:** 사용자 표현의 “CNT 영역”과 가장 가깝고 돌출·TR 절단을 숨기지 않는다. 단, raw 물리 홀인지 cut 홀인지도 정해야 한다. B는 현재 simulator 좌표와 맞지만 착지부 밖 픽셀을 제외해 50% 의미가 달라진다. C는 병렬 홀 의미가 섞인다. **사용자 답변 전 core 변경을 Dispatch하지 않는다.** 분모 선택과 raw/cut/effective 픽셀 수를 provenance에 모두 기록하도록 계획한다. |
-| 2×2 바깥 경계 | A. 중앙 1-unit 평가+주변 halo, B. 유한 2×2 전체 평가, C. 외부 periodic 반복/별도 경계조건 | **A를 잠정 권장:** 중앙 평가의 입자 footprint가 halo 안에 들어가는 크기만 허용한다. B는 외곽 절단·half-hole 효과를 별도로 보고해야 한다. C는 particle-sim 확장 범위가 크다. **답변 전 ROI 구현 범위를 확정하지 않는다.** |
+| 2×2 바깥 경계 | A. 중앙 1-unit 평가+각 변 0.5-unit 여유, B. 유한 2×2 전체 평가, C. 외부 periodic 반복/별도 경계조건 | **A를 잠정 권장:** 중앙 `[300,900)²`의 각 변에서 외곽까지 300 px 여유를 둔다. 입자 footprint뿐 아니라 커널·접점 전체·판정 영향 범위·margin이 이 여유 안에 있는지 입경별로 증명해야 한다. B는 외곽 절단·half-hole 효과를 별도로 보고해야 한다. C는 particle-sim 확장 범위가 크다. **답변 전 ROI 구현 범위를 확정하지 않는다.** |
 | 홀 CNO와 회로 단선 | A. 각 홀 50% 가림 사건과 net/회로 단선을 별개로 계산, B. 같은 link의 어느 홀 하나만 가려져도 전체 CNO | **A를 잠정 권장:** 병렬 금속 경로와 다중 홀에서 개별 CNO와 실제 단선을 구분한다. 현재 core는 B이다([OR 집계](../../../particle-sim/src/particle_sim/failure/contact_not_open.py#L58-L62)). **답변 전 link/circuit 집계 구현을 확정하지 않는다.** |
 
 추가 확인이 필요한 입력은 실제 process stack 예시(무마스크 절연막의 순서·두께 포함), 각 mask layer별 이물 분포와 노출 시점, 확정 회로 net mapping, 그리고 위 세 결정이다. 질문은 source chat에서 이미 비동기로 요청 중이므로 중복 질문을 보내지 않는다.
@@ -51,7 +51,7 @@
 | P2 net 매핑 | extractor adapter/review 입력·pair 생성·검증 테스트. | 추출 ID/회로 net ID 분리. 같은 gate의 TR 양편은 근거가 있을 때만 같은 net; ACTIVE/OACTIVE S/D 및 비접점 교차는 분리. pair 전수/명시 제외 목록과 변경 사유를 저장. 미확정 net은 확정 short 통계에 섞지 않음. | 확정 net 정책/매핑 입력; P1 뒤 통합. |
 | P3 TR·중간층 진단 | extractor `engine.py`, `schema.py`의 필요한 최소 확장, 접점 테스트. | all-layer TR cut 보존. raw 홀 소멸·부분 절단, METAL/CNT TR 겹침, 선언되지 않은 중간 도체 raw 겹침, enclosure 숫자를 issue/provenance로 보고. `hole_in_tr`, `metal_over_tr`, `hole_through_gat2` 반례를 구분. 기하 겹침을 실제 short라고 단정하지 않음. | 허용/거부 정책 결정; P1과 파일 충돌 없이 직렬화. |
 | E1 CNO 50% core | **외부 particle-sim** `failure/contact_not_open.py`, `geometry/contacts.py`, `schema.py`의 classification/warning, CNO 테스트. | 확정 분모로 `>=0.5`, 49/50/51% 경계와 odd-pixel 경계, zero denominator/빈 홀, 유효 착지부와 전체 홀 차이, 병렬 홀 사건 및 집계 테스트. 현재 full-cover 규칙과 출력 분류 변경을 명시. | 분모·여러 홀 결정; 해당 저장소 별도 승인·소유자·검토. |
-| E2 ROI/단계 지원(필요한 경우) | **외부 particle-sim** source/ROI 계약 및 테스트, 또는 검증된 별도 후처리. | `lands_after_layer`가 CNT 개구 후·충전 전을 표현할 수 있는지 확인; source stage가 mask 없는 ILD에 없음. 선택된 집계 창·입자 footprint·평가 면적을 일치시켜 외곽 half-hole/버스 경계 반례를 검증. | 경계 선택·공정 단계 결정; E1과 독립 가능. |
+| E2 ROI/단계 지원(필요한 경우) | **외부 particle-sim** source/ROI 계약 및 테스트, 또는 검증된 별도 후처리. | `lands_after_layer`가 CNT 개구 후·충전 전을 표현할 수 있는지 확인; source stage가 mask 없는 ILD에 없음. 선택된 집계 창·입자 footprint·커널·접점 전체·판정 영향 범위·margin·평가 면적을 일치시켜 외곽 half-hole/버스 경계 반례를 검증. 중앙 창을 택해도 300 px 여유만으로 충분하다고 자동 판정하지 않음. | 경계 선택·공정 단계 결정; E1과 독립 가능. |
 | I1 end-to-end 확인 | 새 ignored output 디렉터리, extractor+particle-sim CLI·검토 문서. | 최신 fixture export 및 `validate-input` 실제 통과, 홀·전극·TR·pair·step inventory 보존/설명, 기존 fixture 양성 대조군 유지. 사용자 입력 물성/회로 net이 없으면 “합성 기능 시험”으로만 명시. 물리 simulation은 별도 승인과 자료 확인 후. | P0–P3와 E1, 필요시 E2. |
 
 ## 6. 정량 반례·명령·재생성 기준
