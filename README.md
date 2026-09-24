@@ -55,6 +55,9 @@ verification record. Earlier review directories are preserved.
 The adapter currently requires one endpoint pair per physical CNT/VIA mask, so
 `export-particle-sim` rejects this mixed CNT1 example before creating output. The tests retain
 a separate legacy one-pair-per-layer fixture to validate the adapter's supported path.
+The [2026-09-24 linkage check](docs/orca/PARTICLE-SIM-LINK-CHECK-20260924.md) records a fresh
+CLI extraction, the exact export failure, a separate particle-sim `validate-input` positive
+control, an actual extracted-electrode mask preview, and the remaining integration work.
 
 Extraction preserves the 0.1 µm/px pitch and writes 1200×1200 px, or 120×120 µm. This has four
 times the unit cell area (14,400 µm² versus 3,600 µm²); raw critical area and defect counts do

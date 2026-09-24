@@ -2,6 +2,11 @@
 
 ## 2026-09-24 metal-bridge fixture update
 
+The follow-up [particle-sim linkage check](PARTICLE-SIM-LINK-CHECK-20260924.md) reran the current
+fixture CLI and documented the mixed-CNT1 export blocker, actual extracted-electrode mask
+preview, and a separate legacy positive control validated by particle-sim. It did not change
+the adapter or particle-sim.
+
 The later fixture candidate `79a4d68` in existing Orca Run `run_5463d205f39d` implements two separate ACTIVE→CNT1→METAL1→CNT1→GAT2 paths. It removes direct ACTIVE/GAT2 contact holes and raw overlap. `physical_stack` records the synthetic bottom-to-top order `ACTIVE,GAT1,GAT2,OACTIVE,GAT3,CNT1,CNT2,METAL1`; the legacy conductor-only `stack` remains its projection. CNT1 has ACTIVE/METAL1 or GAT2/METAL1 endpoints by hole; CNT2 has OACTIVE/METAL1 endpoints. Existing manifests remain compatible.
 
 The new ignored artifact set is `outputs/rgb-metal-bridge-20260924/`: `images/contact-routing-guide.png`, `images/extracted-overlay-1200.png`, `images/raw-composite-1200.png`, `images/raw-layer-sheet.png`, plus `verification.json`, source masks, extraction, and assumptions. It retains R/G/B horizontal GAT1/GAT2/GAT1 buses, extracted full-height METAL1 trunks, 10 TR/unit (40 in 2×2), all-layer cuts, 25 valid contact holes/unit across exactly two CNT masks, 20 px wires, and 0.1 µm/px 600→1200 output. Tests and verification check distinct contact components, exact graph-edge provenance, continuous cut metal between bridge holes, contact enclosure and undeclared conductor overlap, and periodic seams.

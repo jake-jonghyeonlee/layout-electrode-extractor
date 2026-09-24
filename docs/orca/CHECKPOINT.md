@@ -1,5 +1,11 @@
 # Orca checkpoint
 
+## Particle-sim linkage validation, 2026-09-24
+
+- Existing Run `run_5463d205f39d`, coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2), baseline `f01d0d5`; no new Run/editor. Saved bounded direct-coordinator Task `task_4add686708cd` covers fresh CLI extraction, mixed-contact export negative control, legacy positive control, read-only particle-sim contract review, images and documentation. Unrelated untracked `docs/orca/FINAL-REPORT.ko.md` preserved.
+- Fresh ignored `outputs/particle-sim-link-check-20260924/` source/extraction/images/logs created. Current fixture CLI extraction: 600→1200 px at 0.1 µm/px, 101 electrodes, 40 TR (10/unit), 25 valid CNT holes/unit (100 instances/2×2), zero extraction issues. All eight source/raw/cut masks and TR union match prior accepted candidate by SHA-256; all-layer cut exact. Actual extracted electrode-mask sheet shows E00023 bridge net alongside E00056 direct ACTIVE pad, E00085 OACTIVE/metal trunk and E00003 R bus; guide and extracted overlay inspected.
+- Current mixed CNT1 particle-sim export reproduced exit 2 with one-endpoint-pair-per-physical-layer guard, before any output directory. Separate legacy single-pair fixture was freshly extracted (88 electrodes, 32 TR), exported (98 particle-sim electrodes, 4,743 pair classifications), and actual read-only particle-sim `validate-input` returned exit 0, `status: ok`, 16 contact holes, zero unresolved pairs. This positive control does not validate current bridge fixture. Coordinator ran 53 pytest tests and Ruff; both passed. Detailed evidence and concrete adapter/schema/stack worklist: `docs/orca/PARTICLE-SIM-LINK-CHECK-20260924.md`. No particle-sim repo edits, simulator run or remote publication.
+
 ## Two-hole METAL bridge correction, 2026-09-24
 
 - User authorized correction after the physical-stack review. Existing Run `run_5463d205f39d` remains bound to coordinator `term_3b155c62-298f-41f3-ae26-ccde2492da62` (generation 2). Baseline `39d466d` on `main`, clean tracked tree; unrelated untracked `docs/orca/FINAL-REPORT.ko.md` untouched. Prior Dispatches settled, no competing editor.
