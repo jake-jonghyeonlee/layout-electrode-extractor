@@ -135,13 +135,16 @@ zero counts. The CNO denominator is the **full cut hole**, not the effective ove
 Current configured export requires raw=cut so a TR-hit hole cannot silently shrink that
 denominator. It rejects `hole_in_tr` and `hole_through_intermediate_conductor` with the
 component, seed, pair, and offending layer in the error before publishing any output.
-These are export diagnostics; `validate-input` does not establish that the installed
-simulator implements the planned 50% full-hole CNO rule.
+These are export diagnostics; `validate-input` does not establish that the unmodified
+simulator implements the 50% full-hole CNO rule. The isolated simulator candidate below
+implements and tests that rule.
 An undeclared conductor outside the endpoint stack interval is recorded as
 `undeclared_conductor_raw_intersection`; it is an observation, not a fabricated short.
 `mask_diagnostics.metal_over_tr` separately records raw metal components crossing TR and
-allows them because the all-layer cut removes the intersection. Legacy export retains its
-previous permissive behavior and records hole diagnostic codes in the sidecar for review.
+allows them because the all-layer cut removes the intersection. Legacy export records hole
+diagnostic codes, but compatibility is narrower: 4-connected extractions validate, while
+8-connected diagonal holes and older folders without `contact_holes` are rejected. See the
+[independent review](docs/orca/FINAL-OPUS-CODE-REVIEW-20260925.md).
 
 For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0
 manifest with:
@@ -165,12 +168,56 @@ runs, and do not interpret such a smoke as validation of all pairs or of physica
 Adapter stack placement uses semantic `role` values, not layer IDs, so names such as `ACT_A`,
 `OACT_A`, and `MTL_TOP` work. The assumed ILD rows are placed before the OACTIVE role and the
 first METAL- or CONDUCTOR-role layer above it, while each contact marker is placed immediately
-before its declared upper endpoint. The particle source step lands after the last conductor in
-the declared stack.
+before its declared upper endpoint. Legacy export places its particle source step after the
+last conductor; configured export uses explicit ordered stages on mask-bearing layers.
 If ACTIVE/OACTIVE roles make assumed dielectric placement ambiguous, or a contact's endpoints
 cannot be placed in source-stack order, export raises a `ManifestError` before creating output.
 These assumed dielectric locations and thicknesses remain illustrative process settings, not
 inferred physical measurements.
+
+## Current particle-sim integration candidate
+
+The [latest integration report](docs/orca/I1-INTEGRATION-REPORT-20260924.md) records a fresh
+1200×1200 extraction: 40 TRs, 100 CNT holes on two physical masks, 101 extracted
+electrodes, 155 exported electrode/layer masks, and 101 synthetic identity nets. Inspect the
+[source overlay](outputs/v5-integration-20260924/i1-latest/images/source-overlay-1200.png),
+[extracted overlay](outputs/v5-integration-20260924/i1-latest/images/extracted-overlay-1200.png),
+and [actual electrode mask sheet](outputs/v5-integration-20260924/i1-latest/images/actual-extracted-electrode-mask-sheet.png).
+The exact [product manifest](outputs/v5-integration-20260924/i1-latest/particle-sim-e3/product.yaml),
+[per-hole provenance](outputs/v5-integration-20260924/i1-latest/particle-sim-e3/adapter-provenance.json),
+and [verification record](outputs/v5-integration-20260924/i1-latest/verification.json)
+are preserved with the images. The extraction code is at `6893fe6`; the isolated
+particle-sim candidate is at `3bedd08`. The latter passed 352 copy tests and an
+[independent Opus 5.5 review](docs/orca/CNO-SPARSE-OPUS-REVIEW-20260925.md).
+
+The single [cumulative simulator patch](outputs/v5-integration-20260924/particle-sim-v5-cumulative-aae492a-to-3bedd08.patch)
+contains E1–E3 and the exact integer CNO performance fix, from the original simulator
+tree `aae492a` to copy commit `3bedd08`. Its SHA-256 is
+`14b5f6701fb54365905e21d847a1005df8a8f8c722a082adf0d1daf342e97bb4`.
+The two baseline Git trees are identical; the following read-only preflight passed on the
+original checkout:
+
+```sh
+GIT_OPTIONAL_LOCKS=0 git -C /Users/jonghyeonlee/git/particle-sim apply --check \
+  /Users/jonghyeonlee/git/layout-electrode-extractor/outputs/v5-integration-20260924/particle-sim-v5-cumulative-aae492a-to-3bedd08.patch
+```
+
+The original particle-sim checkout has **not** been patched. After reviewing the exact
+patch and resolving the [remaining adapter and derived-output advisories](docs/orca/FINAL-OPUS-CODE-REVIEW-20260925.md),
+an operator can apply it with `git -C /Users/jonghyeonlee/git/particle-sim apply <patch-path>`.
+Then verify from that repository with `.venv/bin/python -m pytest -q tests`,
+`.venv/bin/ruff check src tests`, and `.venv/bin/particle-sim validate-input
+--product-config <absolute-path-to-product.yaml>` using the manifest linked above.
+
+The [sparse CNO benchmark](outputs/v5-integration-20260924/cno-sparse-bench/REPORT.md)
+measures three real CNT1 links at 1, 30, 40 and 50 µm and all 32 sizes on one
+225-pixel hole. The [refreshed bounded geometry result](outputs/v5-integration-20260924/i1-latest/e3-sparse-geometry-probe/geometry-probe.json)
+contains 12 actual short maps and 12 actual CNO maps from the latest export, with a
+synthetic open map at 1 µm. It ran in 6.81 seconds with 844 MB maximum RSS. That
+synthetic open map is not an actual open-kernel result. General circuit-open behaviour,
+the full pair-by-size sweep, and fabrication physics are unverified; the central-window
+audit explicitly marks nonlocal open connectivity unsupported. Process thicknesses,
+insulating materials and particle occurrence weights still require measured inputs.
 
 ## Commands and outputs
 
