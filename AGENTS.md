@@ -34,6 +34,10 @@ Checkpoint Run/Task/Dispatch IDs and acceptance evidence in docs/orca/CHECKPOINT
 Every task has target, change, constraints, ownership, acceptance and baseline.
 
 Do not edit /Users/jonghyeonlee/git/particle-sim. It is read-only integration context.
+Sole exception (user-approved 2026-09-26): apply the Opus-PASS cumulative patch
+`particle-sim-v5-cumulative-aae492a-to-7213deb.patch` (SHA-256 `e715b369…`) on a new
+local branch `v5-extractor-integration` from `aae492a`, commit locally, and validate.
+Never touch other branches, the untracked plan note, or push.
 No remote publication is requested. Local commits to this new repository are allowed.
 Generated examples/output, environments and caches must be ignored by Git.
 
