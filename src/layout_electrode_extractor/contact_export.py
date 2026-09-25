@@ -87,6 +87,28 @@ def _validate_hole_rows(meta: dict, contacts: list[dict]) -> None:
                 raise ManifestError("invalid cut hole provenance component")
 
 
+def _check_raw_seed(labels: np.ndarray, row: dict, contacts: list[dict]) -> None:
+    """Bind an explicit [x, y] seed to its declared raw 4-connected hole."""
+    seed = row["seed"]
+    if seed is None and contacts[row["contact_rule_index"]].get("holes") is not None:
+        raise ManifestError(f"{row['layer']}: missing raw hole seed")
+    if seed is None:  # A single-rule legacy extraction has no explicit seed.
+        return
+    if (
+        not isinstance(seed, list)
+        or len(seed) != 2
+        or any(type(value) is not int for value in seed)
+    ):
+        raise ManifestError(f"{row['layer']}: invalid raw hole seed {seed}")
+    x, y = seed
+    if not (0 <= y < labels.shape[0] and 0 <= x < labels.shape[1]) or labels[y, x] != row[
+        "raw_component"
+    ]:
+        raise ManifestError(
+            f"{row['layer']}: seed {seed} does not match raw_component={row['raw_component']}"
+        )
+
+
 def diagnose_physical_holes(
     source: Path, meta: dict, contacts: list[dict], *, strict: bool
 ) -> list[dict]:
@@ -121,6 +143,7 @@ def diagnose_physical_holes(
                     f"missing raw hole provenance: {hole} raw_component={component}"
                 )
             source_row = declared[key]
+            _check_raw_seed(labels, source_row, contacts)
             rule_index = source_row.get("contact_rule_index")
             if type(rule_index) is not int or rule_index not in rules:
                 raise ManifestError(
@@ -351,7 +374,9 @@ def prepare_contacts(
             raise ManifestError(f"{hole}: raw/cut physical holes differ")
         for component in range(1, count + 1):
             raw_row = raw_rows[hole][component]
+            _check_raw_seed(labels, raw_row, contacts)
             cut_row = cut_rows[hole][component]
+            _check_raw_seed(labels, cut_row, contacts)
             pair = (raw_row["lower"], raw_row["upper"])
             if (
                 pair not in rules[hole]

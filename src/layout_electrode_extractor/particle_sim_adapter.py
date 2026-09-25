@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
+import hashlib
 import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -20,6 +24,34 @@ from .schema import ManifestError
 
 _CONDUCTOR_ROLES = {"GAT", "ACTIVE", "OACTIVE", "METAL", "CONDUCTOR"}
 _CONTACT_ID = re.compile(r"[A-Za-z0-9_-]+\Z")
+
+
+def _publish_noreplace(staging: Path, destination: Path) -> None:
+    """Atomically publish a directory without replacing a concurrent claimant."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    source = os.fsencode(staging)
+    target = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename = libc.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        result = rename(source, target, 0x00000004)  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        rename = libc.renameat2
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        result = rename(-100, source, -100, target, 1)  # RENAME_NOREPLACE
+    else:
+        raise OSError(f"atomic no-replace directory publish unsupported on {sys.platform}")
+    if result != 0:
+        error = ctypes.get_errno()
+        if error in (errno.EEXIST, errno.ENOTEMPTY):
+            raise FileExistsError(f"output already exists: {destination}")
+        raise OSError(error, os.strerror(error), str(destination))
 
 
 def _stack_layers(meta: dict, layers: dict[str, dict], contacts: list[dict]) -> list[dict]:
@@ -235,6 +267,22 @@ def export_particle_sim(
                 "fab_distribution_layer": "ASSUMED_SYNTHETIC_SOURCE",
             }
         ]
+    electrode_rows = [
+        {
+            "electrode_id": f"{electrode['id']}_{layer}",
+            "layer_name": layer,
+            "net_id": electrode["id"],
+            "electrode_role": "SYNTHETIC_EXTRACTED",
+            "path": f"masks/electrode_{electrode['id']}_{layer}.png",
+        }
+        for electrode in meta["electrodes"]
+        for layer in electrode["layers"]
+        if layer in conductors
+    ]
+    pairs, excluded_pairs, open_paths, circuit_sidecar = circuit_declarations(
+        source, meta, electrode_rows, hole_provenance, settings
+    )
+    diagnostics = mask_diagnostics(source, meta, settings)
     output.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
     try:
@@ -254,10 +302,14 @@ def export_particle_sim(
             hole_count,
             steps,
             settings,
+            electrode_rows,
+            pairs,
+            excluded_pairs,
+            open_paths,
+            circuit_sidecar,
+            diagnostics,
         )
-        if output.exists():
-            raise FileExistsError(f"output already exists: {output}")
-        os.rename(staging, output)
+        _publish_noreplace(staging, output)
         return report
     finally:
         if staging.exists():
@@ -280,33 +332,23 @@ def _write_export(
     hole_count: int,
     steps: list[dict],
     settings: dict | None,
+    electrode_rows: list[dict],
+    pairs: list[dict],
+    excluded_pairs: list[dict],
+    open_paths: list[dict],
+    circuit_sidecar: dict,
+    diagnostics: dict,
 ) -> dict:
     """Write to an unpublished sibling directory after preflight succeeds."""
     source_layer = conductors[-1]
-    electrode_rows = []
     electrode_masks: dict[str, Path] = {}
-    electrode_by_layer: dict[str, list[dict]] = {name: [] for name in conductors}
     for electrode in meta["electrodes"]:
         for layer, info in electrode["layers"].items():
             if layer not in conductors:
                 continue
             eid = f"{electrode['id']}_{layer}"
             path = f"masks/electrode_{eid}.png"
-            row = {
-                "electrode_id": eid,
-                "layer_name": layer,
-                "net_id": electrode["id"],
-                "electrode_role": "SYNTHETIC_EXTRACTED",
-                "path": path,
-            }
-            electrode_rows.append(row)
-            electrode_by_layer[layer].append(row)
             electrode_masks[path] = source / info["path"]
-
-    pairs, excluded_pairs, open_paths, circuit_sidecar = circuit_declarations(
-        source, meta, electrode_rows, hole_provenance, settings
-    )
-    diagnostics = mask_diagnostics(source, meta, settings)
     masks_dir = output / "masks"
     masks_dir.mkdir()
     layer_mask_rows = []
@@ -359,6 +401,7 @@ def _write_export(
     (output / "product.yaml").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+    product_sha256 = hashlib.sha256((output / "product.yaml").read_bytes()).hexdigest()
     report = {
         "manifest": str(final_output / "product.yaml"),
         "electrodes": len(electrode_rows),
@@ -389,6 +432,7 @@ def _write_export(
     )
     provenance = {
         "source_extraction": str(source),
+        "product_yaml_sha256": product_sha256,
         "contact_masks": "cut_layers/<CNT-or-VIA>.png; TR union removed from every layer",
         "synthetic_physics": "assumed; not a calibrated process stack",
         "pair_selection": report["pair_policy"],

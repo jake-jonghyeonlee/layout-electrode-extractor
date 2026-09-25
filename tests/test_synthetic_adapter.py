@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from collections import Counter
@@ -14,7 +15,11 @@ from scipy import ndimage
 
 from layout_electrode_extractor import particle_sim_adapter
 from layout_electrode_extractor.cli import main as cli_main
-from layout_electrode_extractor.contact_export import _check_four_partition
+from layout_electrode_extractor.contact_export import (
+    _check_four_partition,
+    diagnose_physical_holes,
+    prepare_contacts,
+)
 from layout_electrode_extractor.engine import extract
 from layout_electrode_extractor.particle_sim_adapter import export_particle_sim
 from layout_electrode_extractor.review import ReviewProject
@@ -727,6 +732,9 @@ def test_configured_mixed_export_partitions_all_holes(
     )
     product = json.loads((output / "product.yaml").read_text())
     provenance = json.loads((output / "adapter-provenance.json").read_text())
+    assert provenance["product_yaml_sha256"] == hashlib.sha256(
+        (output / "product.yaml").read_bytes()
+    ).hexdigest()
     assert (
         report["electrodes"],
         report["nets"],
@@ -916,6 +924,7 @@ def test_synthetic_size_subset_and_measured_contact_rejection(
         ("rule_index", "does not match its declared rule"),
         ("invalid_rule_index", "invalid raw_components contact_rule_index"),
         ("missing_seed", "malformed raw_components hole provenance"),
+        ("null_seed", "missing raw hole seed"),
         ("extra", "missing or unknown hole layers"),
         ("partial_tr", "partial or complete TR cut"),
         ("edge", "edge"),
@@ -954,6 +963,8 @@ def test_corrupt_hole_or_electrode_rejected_before_output(
         metadata["contact_holes"]["raw_components"][0]["contact_rule_index"] = 99
     elif mutation == "missing_seed":
         metadata["contact_holes"]["raw_components"][0].pop("seed")
+    elif mutation == "null_seed":
+        metadata["contact_holes"]["raw_components"][0]["seed"] = None
     elif mutation == "extra":
         extra = metadata["contact_holes"]["raw_components"][0].copy()
         extra["layer"] = "UNKNOWN_LAYER"
@@ -1000,6 +1011,70 @@ def test_diagonal_eight_connected_holes_rejected() -> None:
     assert "raw_component=1" in str(error.value)
     assert "diagonal_raw_component=2" in str(error.value)
     assert "8_component=1" in str(error.value)
+
+
+def test_swapped_same_rule_seeds_rejected_by_both_preflights(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    meta = json.loads(metadata_path.read_text())
+    rows = meta["contact_holes"]["raw_components"]
+    first, second = next(
+        (a, b)
+        for a in rows
+        for b in rows
+        if a is not b
+        and a["layer"] == b["layer"]
+        and a["contact_rule_index"] == b["contact_rule_index"]
+    )
+    first["seed"], second["seed"] = second["seed"], first["seed"]
+    metadata_path.write_text(json.dumps(meta))
+    for preflight in (
+        lambda: prepare_contacts(source, meta, meta["contact_rules"], mixed=True),
+        lambda: diagnose_physical_holes(source, meta, meta["contact_rules"], strict=True),
+    ):
+        with pytest.raises(ManifestError, match="seed .* does not match raw_component"):
+            preflight()
+    output = tmp_path / "absent" / "product"
+    with pytest.raises(ManifestError, match="seed .* does not match raw_component"):
+        export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
+    assert not output.parent.exists()
+
+
+@pytest.mark.parametrize("occupied", [False, True])
+def test_atomic_publish_rejects_concurrent_directory_even_if_empty(
+    tmp_path: Path, mixed_extraction: Path, monkeypatch, occupied: bool
+) -> None:
+    output = tmp_path / "parent" / "product"
+    original_publish = particle_sim_adapter._publish_noreplace
+
+    def claim_then_publish(staging: Path, destination: Path) -> None:
+        destination.mkdir()
+        if occupied:
+            (destination / "owner.txt").write_text("other process")
+        original_publish(staging, destination)
+
+    monkeypatch.setattr(particle_sim_adapter, "_publish_noreplace", claim_then_publish)
+    with pytest.raises(FileExistsError, match="output already exists"):
+        export_particle_sim(
+            mixed_extraction, output, _write_config(tmp_path, _synthetic_config())
+        )
+    assert output.is_dir()
+    assert sorted(path.name for path in output.iterdir()) == (["owner.txt"] if occupied else [])
+    assert not list(output.parent.glob(".product.*"))
+
+
+def test_circuit_preflight_does_not_create_output_parent(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    config = _synthetic_config()
+    config["net_map"] = {"UNKNOWN": "NET"}
+    output = tmp_path / "uncreated" / "product"
+    with pytest.raises(ManifestError, match="net_map must cover every"):
+        export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    assert not output.parent.exists()
 
 
 def test_export_cli_modes(tmp_path: Path, mixed_extraction: Path, capsys) -> None:
