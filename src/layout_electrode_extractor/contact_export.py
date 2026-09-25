@@ -33,8 +33,32 @@ def _check_four_partition(mask: np.ndarray, layer: str, connectivity: int) -> No
     four, _ = ndimage.label(mask, _FOUR)
     eight, count = ndimage.label(mask, _EIGHT)
     for component in range(1, count + 1):
-        if len(set(four[eight == component].tolist())) != 1:
-            raise ManifestError(f"{layer}: 8-connectivity merges distinct 4-connected holes")
+        pixels = np.argwhere(eight == component)
+        four_components = set(four[eight == component].tolist())
+        four_components.discard(0)
+        if len(four_components) <= 1:
+            continue
+        for y, x in pixels:
+            for dy, dx in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+                ny, nx = int(y + dy), int(x + dx)
+                if (
+                    0 <= ny < mask.shape[0]
+                    and 0 <= nx < mask.shape[1]
+                    and eight[ny, nx] == component
+                    and four[ny, nx] != four[y, x]
+                ):
+                    raise ManifestError(
+                        f"{layer}: diagonal-only 8-connected hole merges 4-connected holes; "
+                        f"pixel_yx=({int(y)}, {int(x)}) "
+                        f"diagonal_neighbor_yx=({ny}, {nx}) "
+                        f"raw_component={int(four[y, x])} "
+                        f"diagonal_raw_component={int(four[ny, nx])} "
+                        f"8_component={component}"
+                    )
+        raise ManifestError(
+            f"{layer}: 8-connected hole merges multiple 4-connected components; "
+            f"8_component={component}"
+        )
 
 
 def _validate_hole_rows(meta: dict, contacts: list[dict]) -> None:
@@ -79,6 +103,8 @@ def diagnose_physical_holes(
     layers = {row["id"]: row for row in meta["layers"]}
     raw = {name: _mask(source / row["raw_path"], shape) for name, row in layers.items()}
     cut = {name: _mask(source / row["cut_path"], shape) for name, row in layers.items()}
+    for hole in {row["layer"] for row in contacts}:
+        _check_four_partition(raw[hole], hole, meta.get("connectivity", 4))
     rules = {index: row for index, row in enumerate(contacts)}
     source_rows = meta["contact_holes"]["raw_components"]
     declared = {(row["layer"], row["raw_component"]): row for row in source_rows}

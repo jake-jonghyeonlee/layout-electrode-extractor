@@ -142,8 +142,12 @@ An undeclared conductor outside the endpoint stack interval is recorded as
 `undeclared_conductor_raw_intersection`; it is an observation, not a fabricated short.
 `mask_diagnostics.metal_over_tr` separately records raw metal components crossing TR and
 allows them because the all-layer cut removes the intersection. Legacy export records hole
-diagnostic codes, but compatibility is narrower: 4-connected extractions validate, while
-8-connected diagonal holes and older folders without `contact_holes` are rejected. See the
+diagnostic codes, but its compatibility contract is narrower than the original permissive
+path: 4-connected extractions with complete `contact_holes` provenance validate, while
+8-connected CNT/VIA masks that merge diagonal-only, distinct 4-connected holes are rejected.
+The error reports the layer, the diagonal pixel pair, and both 4-connected component labels
+within the merged 8-connected component. Older extraction folders without `contact_holes`
+provenance are also rejected. See the
 [independent review](docs/orca/FINAL-OPUS-CODE-REVIEW-20260925.md).
 
 For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0

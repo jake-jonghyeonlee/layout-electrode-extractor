@@ -130,6 +130,32 @@ def test_legacy_contact_fixture_extract_and_particle_sim_export(tmp_path: Path) 
     assert (adapted / "adapter-provenance.json").is_file()
 
 
+def test_legacy_export_rejects_diagonal_only_cnt_with_location(tmp_path: Path) -> None:
+    manifest_path = _legacy_adapter_input(tmp_path / "input")
+    source = manifest_path.parent
+    manifest = json.loads(manifest_path.read_text())
+    manifest["connectivity"] = 8
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    cnt_path = source / "masks" / "CNT1.png"
+    with Image.open(cnt_path) as image:
+        cnt = np.asarray(image.convert("L")).copy()
+    assert not cnt[10, 10] and not cnt[11, 11] and not cnt[10, 11] and not cnt[11, 10]
+    cnt[10, 10] = cnt[11, 11] = 255
+    Image.fromarray(cnt).save(cnt_path)
+
+    extracted = tmp_path / "extracted"
+    extract(manifest_path, extracted)
+    output = tmp_path / "particle-sim"
+    with pytest.raises(ManifestError, match="CNT1: diagonal-only 8-connected hole") as error:
+        export_particle_sim(extracted, output)
+
+    message = str(error.value)
+    assert "pixel_yx=(10, 10)" in message
+    assert "diagonal_neighbor_yx=(11, 11)" in message
+    assert "raw_component=" in message and "8_component=" in message
+    assert not output.exists()
+
+
 def test_mixed_contact_fixture_rejected_before_adapter_output(tmp_path: Path) -> None:
     generated = Path(make_synthetic(tmp_path / "source")["manifest"])
     extracted = tmp_path / "extracted"
@@ -967,8 +993,13 @@ def test_corrupt_hole_or_electrode_rejected_before_output(
 
 def test_diagonal_eight_connected_holes_rejected() -> None:
     diagonal = np.array([[1, 0], [0, 1]], dtype=bool)
-    with pytest.raises(ManifestError, match="8-connectivity merges"):
+    with pytest.raises(ManifestError, match="CNT1: diagonal-only 8-connected hole") as error:
         _check_four_partition(diagonal, "CNT1", 8)
+    assert "pixel_yx=(0, 0)" in str(error.value)
+    assert "diagonal_neighbor_yx=(1, 1)" in str(error.value)
+    assert "raw_component=1" in str(error.value)
+    assert "diagonal_raw_component=2" in str(error.value)
+    assert "8_component=1" in str(error.value)
 
 
 def test_export_cli_modes(tmp_path: Path, mixed_extraction: Path, capsys) -> None:
