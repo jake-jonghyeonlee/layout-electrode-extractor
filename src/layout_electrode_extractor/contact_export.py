@@ -79,6 +79,8 @@ def _validate_hole_rows(meta: dict, contacts: list[dict]) -> None:
             index = row["contact_rule_index"]
             if type(index) is not int or not 0 <= index < len(contacts):
                 raise ManifestError(f"invalid {kind} contact_rule_index")
+            if contacts[index]["layer"] != row["layer"]:
+                raise ManifestError(f"{kind} contact_rule_index does not match row layer")
             if type(row["raw_component"]) is not int or row["raw_component"] < 1:
                 raise ManifestError(f"invalid {kind} raw hole provenance component")
             if kind == "components" and (

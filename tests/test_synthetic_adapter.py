@@ -135,6 +135,32 @@ def test_legacy_contact_fixture_extract_and_particle_sim_export(tmp_path: Path) 
     assert (adapted / "adapter-provenance.json").is_file()
 
 
+def test_legacy_cross_layer_contact_rule_index_rejected_before_output(tmp_path: Path) -> None:
+    manifest = _legacy_adapter_input(tmp_path / "input")
+    source = tmp_path / "extracted"
+    extract(manifest, source)
+    original = json.loads((source / "manifest.json").read_text())
+    assert original["contact_rules"][1]["layer"] == "CNT2"
+    for kinds in (("raw_components",), ("components",), ("raw_components", "components")):
+        meta = deepcopy(original)
+        for kind in kinds:
+            rows = [row for row in meta["contact_holes"][kind] if row["layer"] == "CNT1"]
+            assert rows and all(row["seed"] is None for row in rows)
+            for row in rows:
+                row["contact_rule_index"] = 1
+        for strict in (False, True):
+            with pytest.raises(ManifestError, match="contact_rule_index.*layer"):
+                diagnose_physical_holes(source, meta, meta["contact_rules"], strict=strict)
+        with pytest.raises(ManifestError, match="contact_rule_index.*layer"):
+            prepare_contacts(source, meta, meta["contact_rules"], mixed=True)
+        if len(kinds) == 2:
+            (source / "manifest.json").write_text(json.dumps(meta))
+            output = tmp_path / "absent" / "product"
+            with pytest.raises(ManifestError, match="contact_rule_index.*layer"):
+                export_particle_sim(source, output)
+            assert not output.parent.exists()
+
+
 def test_legacy_export_rejects_diagonal_only_cnt_with_location(tmp_path: Path) -> None:
     manifest_path = _legacy_adapter_input(tmp_path / "input")
     source = manifest_path.parent
@@ -921,12 +947,12 @@ def test_synthetic_size_subset_and_measured_contact_rejection(
         ("duplicate", "duplicate raw hole provenance"),
         ("endpoint", "wrong or inconsistent hole endpoints"),
         ("rule_endpoint", "unsupported contact topology"),
-        ("rule_index", "seed .* is not in declared rule holes"),
+        ("rule_index", "contact_rule_index.*layer"),
         ("invalid_rule_index", "invalid raw_components contact_rule_index"),
         ("missing_seed", "malformed raw_components hole provenance"),
         ("missing_cut_seed", "malformed components hole provenance"),
         ("null_seed", "missing raw hole seed"),
-        ("extra", "missing or unknown hole layers"),
+        ("extra", "contact_rule_index.*layer"),
         ("partial_tr", "partial or complete TR cut"),
         ("edge", "edge"),
         ("overlap", "overlap"),
