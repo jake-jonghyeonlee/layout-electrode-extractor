@@ -5,6 +5,10 @@ identity, stores a 2×2 unit image at the original pixel pitch, and provides a l
 for names and circuit anchors. It is a geometry workflow; generated synthetic values and the
 particle-sim export do not establish physical process validity.
 
+To run with real layout, circuit, process, and fab data, follow the Korean
+[real-data guide](docs/REAL-DATA-GUIDE.ko.md) and the templates in
+`examples/real-data-template/`.
+
 ## Reproducible synthetic example
 
 Python 3.11 or newer is required. From the repository root:

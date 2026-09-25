@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "pixel_size_um": 0.1,
+  "origin_um": [0.0, 0.0],
+  "connectivity": 4,
+  "layers": [
+    {"id": "ACTIVE", "path": "masks/ACTIVE.png", "role": "ACTIVE"},
+    {"id": "GAT1", "path": "masks/GAT1.png", "role": "GAT"},
+    {"id": "GAT2", "path": "masks/GAT2.png", "role": "GAT"},
+    {"id": "OACTIVE", "path": "masks/OACTIVE.png", "role": "OACTIVE"},
+    {"id": "CNT1", "path": "masks/CNT1.png", "role": "CNT"},
+    {"id": "CNT2", "path": "masks/CNT2.png", "role": "CNT"},
+    {"id": "METAL1", "path": "masks/METAL1.png", "role": "METAL"}
+  ],
+  "stack": ["ACTIVE", "GAT1", "GAT2", "OACTIVE", "METAL1"],
+  "physical_stack": ["ACTIVE", "GAT1", "GAT2", "OACTIVE", "CNT1", "CNT2", "METAL1"],
+  "tr_pairs": [
+    {"gat": "GAT1", "channel": "ACTIVE"},
+    {"gat": "GAT2", "channel": "OACTIVE"}
+  ],
+  "contacts": [
+    {"layer": "CNT1", "lower": "ACTIVE", "upper": "METAL1", "holes": [[100, 120], [180, 325]]},
+    {"layer": "CNT1", "lower": "GAT2", "upper": "METAL1", "holes": [[150, 200]]},
+    {"layer": "CNT2", "lower": "OACTIVE", "upper": "METAL1"}
+  ]
+}

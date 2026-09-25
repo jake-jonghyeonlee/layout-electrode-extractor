@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "profile": "synthetic",
+  "process_stack": [
+    {"id": "ACTIVE", "kind": "conductor", "mask_layer": "ACTIVE", "material_type": "conductor", "thickness_um": 0.05, "patterned": true},
+    {"id": "GI1", "kind": "dielectric", "mask_layer": null, "material_type": "inorganic", "thickness_um": 0.12, "patterned": false, "planarization_factor": 0.0},
+    {"id": "GAT1", "kind": "conductor", "mask_layer": "GAT1", "material_type": "conductor", "thickness_um": 0.25, "patterned": true},
+    {"id": "GAT2", "kind": "conductor", "mask_layer": "GAT2", "material_type": "conductor", "thickness_um": 0.25, "patterned": true},
+    {"id": "ILD1", "kind": "dielectric", "mask_layer": null, "material_type": "inorganic", "thickness_um": 0.4, "patterned": false, "planarization_factor": 0.2},
+    {"id": "OACTIVE", "kind": "conductor", "mask_layer": "OACTIVE", "material_type": "conductor", "thickness_um": 0.03, "patterned": true},
+    {"id": "ILD2", "kind": "dielectric", "mask_layer": null, "material_type": "inorganic", "thickness_um": 0.3, "patterned": false, "planarization_factor": 0.2},
+    {"id": "CNT1", "kind": "hole", "mask_layer": "CNT1", "material_type": "inorganic", "thickness_um": 0.7, "patterned": true},
+    {"id": "CNT2", "kind": "hole", "mask_layer": "CNT2", "material_type": "inorganic", "thickness_um": 0.3, "patterned": true},
+    {"id": "METAL1", "kind": "conductor", "mask_layer": "METAL1", "material_type": "conductor", "thickness_um": 0.5, "patterned": true},
+    {"id": "PAS", "kind": "dielectric", "mask_layer": null, "material_type": "organic", "thickness_um": 1.5, "patterned": false, "planarization_factor": 0.8}
+  ],
+  "source_stages": [
+    {"step_id": "SRC_AFTER_GAT2", "after_layer": "GAT2", "semantics": "after_pattern", "surface_model": "flat", "fab_distribution_layer": "GATE_PHOTO"},
+    {"step_id": "SRC_CNT1_OPEN", "after_layer": "CNT1", "semantics": "cnt_open_before_fill_approximation", "surface_model": "flat", "fab_distribution_layer": "CNT_ETCH"},
+    {"step_id": "SRC_CNT2_OPEN", "after_layer": "CNT2", "semantics": "cnt_open_before_fill_approximation", "surface_model": "flat", "fab_distribution_layer": "CNT_ETCH"},
+    {"step_id": "SRC_AFTER_METAL1", "after_layer": "METAL1", "semantics": "after_pattern", "surface_model": "flat", "fab_distribution_layer": "METAL_PHOTO"}
+  ],
+  "contact_applicable_stages": {"CNT1": ["SRC_CNT1_OPEN"], "CNT2": ["SRC_CNT2_OPEN"]},
+  "particle_sizes_um": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 40, 50],
+  "net_map": {"E00001": "VDD", "E00002": "VDD", "E00003": "SCAN1"},
+  "excluded_pairs": [
+    {"electrode_a": "E00004_GAT1", "electrode_b": "E00007_METAL1", "reason": "design-review: shielded by PAS, confirmed by layout owner"}
+  ],
+  "open_paths": [
+    {
+      "path_id": "OPEN_SCAN1",
+      "electrode": "E00003_GAT1",
+      "circuit_net_id": "SCAN1",
+      "circuit_connection_id": "CONN_SCAN1_M1_GATE",
+      "terminal_a_yx_px": [200, 25],
+      "terminal_b_yx_px": [200, 1150],
+      "applicable_particle_source_steps": ["SRC_AFTER_GAT2"]
+    }
+  ],
+  "cno_open_relations": []
+}

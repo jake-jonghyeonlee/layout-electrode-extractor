@@ -1,0 +1,5 @@
+fab_id,product_family,fab_distribution_layer,size_bin_left_um,size_bin_right_um,size_representative_um,mean_particle_count,inspection_area_per_sample_mm2,measurement_period,particle_type,sample_count
+FAB_A,PRODUCT_X,GATE_PHOTO,0.5,1.5,1,120,1000,2026Q3,generic,30
+FAB_A,PRODUCT_X,GATE_PHOTO,1.5,2.5,2,45,1000,2026Q3,generic,30
+FAB_A,PRODUCT_X,CNT_ETCH,0.5,1.5,1,80,1000,2026Q3,generic,30
+FAB_A,PRODUCT_X,METAL_PHOTO,0.5,1.5,1,150,1000,2026Q3,generic,30
