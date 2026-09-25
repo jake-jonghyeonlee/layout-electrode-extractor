@@ -11,15 +11,19 @@ Use saved Orca Tasks and supervised Dispatches, not native subagents.
 One editing worker at a time; at most one additional read-only worker.
 Workers do not launch nested workers. Coordinator alone accepts completion.
 
-Routing: default implementation Luna high; difficult periodic connectivity and
-cross-module design Sol medium/high. Coordinator Sol medium. Independent review
-of core calculations, schemas, security and recovery: Claude Sonnet high.
+Routing: default implementation Sol medium. Use Sol high only for a stated
+reasoning need: periodic connectivity/instance identity (`engine.py`,
+`periodic.py`), CNO/open/dedup or other core result calculations, cross-repository
+design, or recovery logic. A failed attempt alone is not a reason to raise effort;
+fix local mistakes at medium. Coordinator Sol medium. Independent review
+of core calculations, schemas, security and recovery: a fresh read-only Claude
+Opus 5.5 (`claude-opus-5-5`) high session, separate from the author.
 Only subscription authentication is authorized, never additional API billing.
 
 Use explicit terminals until a new read-only structured-worker smoke is proven:
-`orca terminal create --worktree path:/Users/jonghyeonlee/git/layout-electrode-extractor --command 'codex --model gpt-6-luna -c model_reasoning_effort="high" --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust' --json`
+`orca terminal create --worktree path:/Users/jonghyeonlee/git/layout-electrode-extractor --command 'codex --model gpt-6-sol -c model_reasoning_effort="medium" --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust' --json`
 Then `terminal wait --for tui-idle` and `orchestration worker-start --task ... --terminal ...`.
-For Sol substitute the selected model/effort. For Claude use sonnet/high.
+For Sol high substitute `model_reasoning_effort="high"`. For Claude review use `claude --model claude-opus-5-5 --effort high`.
 Review `~/.codex/hooks.json` before unattended Codex launch after any hook change.
 Verify actual model/effort from the terminal, not only the launch receipt.
 
