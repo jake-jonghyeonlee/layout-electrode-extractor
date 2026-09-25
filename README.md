@@ -147,7 +147,10 @@ path: 4-connected extractions with complete `contact_holes` provenance validate,
 8-connected CNT/VIA masks that merge diagonal-only, distinct 4-connected holes are rejected.
 The error reports the layer, the diagonal pixel pair, and both 4-connected component labels
 within the merged 8-connected component. Older extraction folders without `contact_holes`
-provenance are also rejected. See the
+provenance are also rejected. For hole provenance, an explicit seed is always checked against
+its raw 4-connected component. `seed: null` is accepted only for a legacy layer with exactly
+one endpoint rule; there is no alternate rule to swap. Configured or multi-rule holes require
+an explicit matching seed. See the
 [independent review](docs/orca/FINAL-OPUS-CODE-REVIEW-20260925.md).
 
 For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0
