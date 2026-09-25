@@ -152,7 +152,7 @@ provenance are also rejected. For hole provenance, every explicit seed must matc
 is a manifest error. In both legacy and configured modes, `seed: null` is allowed only when
 the row's layer has exactly one contact rule and that rule has no explicit `holes` list.
 Multi-rule layers and rules with an explicit `holes` list require a matching seed. See the
-[independent review](docs/orca/FINAL-OPUS-CODE-REVIEW-20260925.md).
+[independent P0 re-review](docs/orca/P0-OPUS-REREVIEW-20260925.md).
 
 For a legacy one-pair-per-layer extraction, omit `--config` and validate its schema 2.0
 manifest with:
