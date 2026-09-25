@@ -921,9 +921,10 @@ def test_synthetic_size_subset_and_measured_contact_rejection(
         ("duplicate", "duplicate raw hole provenance"),
         ("endpoint", "wrong or inconsistent hole endpoints"),
         ("rule_endpoint", "unsupported contact topology"),
-        ("rule_index", "does not match its declared rule"),
+        ("rule_index", "seed .* is not in declared rule holes"),
         ("invalid_rule_index", "invalid raw_components contact_rule_index"),
         ("missing_seed", "malformed raw_components hole provenance"),
+        ("missing_cut_seed", "malformed components hole provenance"),
         ("null_seed", "missing raw hole seed"),
         ("extra", "missing or unknown hole layers"),
         ("partial_tr", "partial or complete TR cut"),
@@ -963,6 +964,8 @@ def test_corrupt_hole_or_electrode_rejected_before_output(
         metadata["contact_holes"]["raw_components"][0]["contact_rule_index"] = 99
     elif mutation == "missing_seed":
         metadata["contact_holes"]["raw_components"][0].pop("seed")
+    elif mutation == "missing_cut_seed":
+        metadata["contact_holes"]["components"][0].pop("seed")
     elif mutation == "null_seed":
         metadata["contact_holes"]["raw_components"][0]["seed"] = None
     elif mutation == "extra":
@@ -1039,6 +1042,151 @@ def test_swapped_same_rule_seeds_rejected_by_both_preflights(
             preflight()
     output = tmp_path / "absent" / "product"
     with pytest.raises(ManifestError, match="seed .* does not match raw_component"):
+        export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
+    assert not output.parent.exists()
+
+
+def test_multi_rule_null_seed_rejected_even_without_rule_holes(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    layer = "CNT1"
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    meta = json.loads(metadata_path.read_text())
+    for rule in meta["contact_rules"]:
+        if rule["layer"] == layer:
+            rule.pop("holes", None)
+    for kind in ("raw_components", "components"):
+        for row in meta["contact_holes"][kind]:
+            if row["layer"] == layer:
+                row["seed"] = None
+    metadata_path.write_text(json.dumps(meta))
+    for preflight in (
+        lambda: prepare_contacts(source, meta, meta["contact_rules"], mixed=True),
+        lambda: diagnose_physical_holes(source, meta, meta["contact_rules"], strict=True),
+    ):
+        with pytest.raises(ManifestError, match=f"{layer}: missing raw hole seed"):
+            preflight()
+    with pytest.raises(ManifestError, match="CNT1: missing raw hole seed"):
+        diagnose_physical_holes(source, meta, meta["contact_rules"], strict=False)
+    output = tmp_path / "absent" / "product"
+    with pytest.raises(ManifestError, match=f"{layer}: missing raw hole seed"):
+        export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
+    assert not output.parent.exists()
+
+
+def test_configured_single_rule_without_holes_allows_null_seed(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    meta = json.loads(metadata_path.read_text())
+    rule = next(rule for rule in meta["contact_rules"] if rule["layer"] == "CNT2")
+    assert "holes" not in rule
+    for kind in ("raw_components", "components"):
+        for row in meta["contact_holes"][kind]:
+            if row["layer"] == "CNT2":
+                row["seed"] = None
+    metadata_path.write_text(json.dumps(meta))
+    prepare_contacts(source, meta, meta["contact_rules"], mixed=True)
+    diagnose_physical_holes(source, meta, meta["contact_rules"], strict=True)
+    output = tmp_path / "product"
+    export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
+    assert (output / "product.yaml").is_file()
+
+
+def test_explicit_rule_holes_reject_null_seed_on_single_rule_layer(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    meta = json.loads(metadata_path.read_text())
+    rule = next(rule for rule in meta["contact_rules"] if rule["layer"] == "CNT2")
+    rule["holes"] = [
+        row["seed"]
+        for row in meta["contact_holes"]["raw_components"]
+        if row["layer"] == "CNT2"
+    ]
+    for kind in ("raw_components", "components"):
+        next(row for row in meta["contact_holes"][kind] if row["layer"] == "CNT2")[
+            "seed"
+        ] = None
+    metadata_path.write_text(json.dumps(meta))
+    for preflight in (
+        lambda: prepare_contacts(source, meta, meta["contact_rules"], mixed=True),
+        lambda: diagnose_physical_holes(source, meta, meta["contact_rules"], strict=True),
+    ):
+        with pytest.raises(ManifestError, match="CNT2: missing raw hole seed"):
+            preflight()
+    output = tmp_path / "absent" / "product"
+    with pytest.raises(ManifestError, match="CNT2: missing raw hole seed"):
+        export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
+    assert not output.parent.exists()
+
+
+def test_explicit_seed_requires_declared_rule_holes(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    meta = json.loads(metadata_path.read_text())
+    assert "holes" not in next(
+        rule for rule in meta["contact_rules"] if rule["layer"] == "CNT2"
+    )
+    labels, _ = ndimage.label(np.asarray(Image.open(source / "raw_layers" / "CNT2.png")) > 0)
+    for kind in ("raw_components", "components"):
+        row = next(row for row in meta["contact_holes"][kind] if row["layer"] == "CNT2")
+        y, x = np.argwhere(labels == row["raw_component"])[0]
+        row["seed"] = [int(x), int(y)]
+    metadata_path.write_text(json.dumps(meta))
+    for preflight in (
+        lambda: prepare_contacts(source, meta, meta["contact_rules"], mixed=True),
+        lambda: diagnose_physical_holes(source, meta, meta["contact_rules"], strict=True),
+    ):
+        with pytest.raises(ManifestError, match="seed .* is not in declared rule holes"):
+            preflight()
+
+
+def test_swapped_rule_assignment_rejected_by_seed_rule_membership(
+    tmp_path: Path, mixed_extraction: Path
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(mixed_extraction, source)
+    metadata_path = source / "manifest.json"
+    meta = json.loads(metadata_path.read_text())
+    first, second = next(
+        (a, b)
+        for a in meta["contact_holes"]["raw_components"]
+        for b in meta["contact_holes"]["raw_components"]
+        if a["layer"] == b["layer"] == "CNT1"
+        and a["contact_rule_index"] != b["contact_rule_index"]
+    )
+    for kind in ("raw_components", "components"):
+        rows = meta["contact_holes"][kind]
+        for component, other in (
+            (first["raw_component"], second),
+            (second["raw_component"], first),
+        ):
+            row = next(
+                row
+                for row in rows
+                if row["layer"] == "CNT1" and row["raw_component"] == component
+            )
+            for key in ("contact_rule_index", "lower", "upper"):
+                row[key] = other[key]
+    metadata_path.write_text(json.dumps(meta))
+    for preflight in (
+        lambda: prepare_contacts(source, meta, meta["contact_rules"], mixed=True),
+        lambda: diagnose_physical_holes(source, meta, meta["contact_rules"], strict=True),
+    ):
+        with pytest.raises(ManifestError, match="seed .* is not in declared rule holes"):
+            preflight()
+    output = tmp_path / "absent" / "product"
+    with pytest.raises(ManifestError, match="seed .* is not in declared rule holes"):
         export_particle_sim(source, output, _write_config(tmp_path, _synthetic_config()))
     assert not output.parent.exists()
 

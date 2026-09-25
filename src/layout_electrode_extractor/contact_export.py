@@ -68,7 +68,7 @@ def _validate_hole_rows(meta: dict, contacts: list[dict]) -> None:
     shared = {"layer", "raw_component", "contact_rule_index", "lower", "upper"}
     for kind, required in (
         ("raw_components", shared | {"seed"}),
-        ("components", shared | {"cut_component"}),
+        ("components", shared | {"cut_component", "seed"}),
     ):
         rows = source.get(kind)
         if not isinstance(rows, list):
@@ -90,9 +90,14 @@ def _validate_hole_rows(meta: dict, contacts: list[dict]) -> None:
 def _check_raw_seed(labels: np.ndarray, row: dict, contacts: list[dict]) -> None:
     """Bind an explicit [x, y] seed to its declared raw 4-connected hole."""
     seed = row["seed"]
-    if seed is None and contacts[row["contact_rule_index"]].get("holes") is not None:
-        raise ManifestError(f"{row['layer']}: missing raw hole seed")
-    if seed is None:  # A single-rule legacy extraction has no explicit seed.
+    rule = contacts[row["contact_rule_index"]]
+    holes = rule.get("holes")
+    if seed is None:
+        if holes is not None or sum(
+            contact["layer"] == row["layer"] for contact in contacts
+        ) != 1:
+            raise ManifestError(f"{row['layer']}: missing raw hole seed")
+        # A single rule without a declared hole list has no explicit seed.
         return
     if (
         not isinstance(seed, list)
@@ -107,6 +112,8 @@ def _check_raw_seed(labels: np.ndarray, row: dict, contacts: list[dict]) -> None
         raise ManifestError(
             f"{row['layer']}: seed {seed} does not match raw_component={row['raw_component']}"
         )
+    if not isinstance(holes, list) or seed not in holes:
+        raise ManifestError(f"{row['layer']}: seed {seed} is not in declared rule holes")
 
 
 def diagnose_physical_holes(
