@@ -37,8 +37,11 @@ Do not edit /Users/jonghyeonlee/git/particle-sim. It is read-only integration co
 Sole exception (user-approved 2026-09-26): apply the Opus-PASS cumulative patch
 `particle-sim-v5-cumulative-aae492a-to-7213deb.patch` (SHA-256 `e715b369…`) on a new
 local branch `v5-extractor-integration` from `aae492a`, commit locally, and validate.
-Never touch other branches, the untracked plan note, or push.
-No remote publication is requested. Local commits to this new repository are allowed.
+Never touch other branches or the untracked plan note.
+Publication (user-approved 2026-09-26): both repositories are PRIVATE GitHub repos,
+`jake-jonghyeonlee/layout-electrode-extractor` and `jake-jonghyeonlee/particle-sim`.
+Never change visibility to public without explicit user approval. Local commits are allowed;
+push only when the user asks.
 Generated examples/output, environments and caches must be ignored by Git.
 
 # Product contract

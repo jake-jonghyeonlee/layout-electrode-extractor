@@ -191,7 +191,7 @@ inferred physical measurements.
 
 ## particle-sim compatibility
 
-The extractor and particle-sim are separate repositories. They share no Python imports;
+The extractor and [particle-sim](https://github.com/jake-jonghyeonlee/particle-sim) are separate repositories. They share no Python imports;
 they are coupled only through files: the schema 2.0 `product.yaml`, its per-layer masks,
 and the `adapter-provenance.json` sidecar that particle-sim reads with
 `analyze-cno-open --adapter-sidecar`.

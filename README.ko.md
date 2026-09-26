@@ -121,7 +121,7 @@ particle-sim 쪽 변경은 다음과 같습니다.
 
 ## particle-sim 호환 버전
 
-두 레포는 따로 관리합니다. 서로의 Python 코드를 import하지 않고 파일로만 연결됩니다.
+두 레포는 따로 관리합니다([particle-sim](https://github.com/jake-jonghyeonlee/particle-sim)). 서로의 Python 코드를 import하지 않고 파일로만 연결됩니다.
 연결 파일은 schema 2.0 `product.yaml`, 레이어별 마스크, 그리고 particle-sim이
 `analyze-cno-open --adapter-sidecar`로 읽는 `adapter-provenance.json`입니다.
 
