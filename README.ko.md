@@ -119,6 +119,20 @@ particle-sim 쪽 변경은 다음과 같습니다.
 원본의 기존 브랜치 `schema2-contacts-cno`는 `aae492a` 그대로입니다. 원격에는 게시하지 않았습니다.
 경위와 근거는 [체크포인트](docs/orca/CHECKPOINT.md)와 [한국어 최종 보고서](docs/orca/FINAL-REPORT.ko.md)에 있습니다.
 
+## particle-sim 호환 버전
+
+두 레포는 따로 관리합니다. 서로의 Python 코드를 import하지 않고 파일로만 연결됩니다.
+연결 파일은 schema 2.0 `product.yaml`, 레이어별 마스크, 그리고 particle-sim이
+`analyze-cno-open --adapter-sidecar`로 읽는 `adapter-provenance.json`입니다.
+
+| layout-electrode-extractor | particle-sim | 상태 |
+| --- | --- | --- |
+| `main`의 `77b335a` 이후 | 브랜치 `v5-extractor-integration`, 커밋 `fca4806` | 지원. 설정 export, 50% 홀 CNO(E1), 중앙 support 감사(E2), sidecar 해시 결합 CNO/open 중복 제거(E3) |
+| `--config` 없는 legacy export | `aae492a` (`schema2-contacts-cno`) | P2 점검에서 `validate-input` 통과. `fca4806`에서는 다시 확인하지 않음 |
+
+`fca4806`의 Git tree는 독립 검토를 통과한 복사본 커밋 `7213deb`와 같습니다. 두 레포를
+게시한 뒤에는 커밋 ID 대신 릴리스 태그로 이 표를 갱신하세요.
+
 ## 한계
 
 - 합성 회로, stack 두께, 유전 특성, 입자 설정은 예시용 가정입니다.

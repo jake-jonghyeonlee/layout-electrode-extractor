@@ -189,50 +189,41 @@ cannot be placed in source-stack order, export raises a `ManifestError` before c
 These assumed dielectric locations and thicknesses remain illustrative process settings, not
 inferred physical measurements.
 
-## Current particle-sim integration candidate
+## particle-sim compatibility
 
-The [latest integration report](docs/orca/I1-INTEGRATION-REPORT-20260924.md) records a fresh
-1200×1200 extraction: 40 TRs, 100 CNT holes on two physical masks, 101 extracted
-electrodes, 155 exported electrode/layer masks, and 101 synthetic identity nets. Inspect the
-[source overlay](outputs/v5-integration-20260924/i1-latest/images/source-overlay-1200.png),
-[extracted overlay](outputs/v5-integration-20260924/i1-latest/images/extracted-overlay-1200.png),
-and [actual electrode mask sheet](outputs/v5-integration-20260924/i1-latest/images/actual-extracted-electrode-mask-sheet.png).
-The exact [product manifest](outputs/v5-integration-20260924/i1-latest/particle-sim-e3/product.yaml),
-[per-hole provenance](outputs/v5-integration-20260924/i1-latest/particle-sim-e3/adapter-provenance.json),
-and [verification record](outputs/v5-integration-20260924/i1-latest/verification.json)
-are preserved with the images. The extraction code is at `6893fe6`; the isolated
-particle-sim candidate is at `3bedd08`. The latter passed 352 copy tests and an
-[independent Opus 5.5 review](docs/orca/CNO-SPARSE-OPUS-REVIEW-20260925.md).
+The extractor and particle-sim are separate repositories. They share no Python imports;
+they are coupled only through files: the schema 2.0 `product.yaml`, its per-layer masks,
+and the `adapter-provenance.json` sidecar that particle-sim reads with
+`analyze-cno-open --adapter-sidecar`.
 
-The single [cumulative simulator patch](outputs/v5-integration-20260924/particle-sim-v5-cumulative-aae492a-to-3bedd08.patch)
-contains E1–E3 and the exact integer CNO performance fix, from the original simulator
-tree `aae492a` to copy commit `3bedd08`. Its SHA-256 is
-`14b5f6701fb54365905e21d847a1005df8a8f8c722a082adf0d1daf342e97bb4`.
-The two baseline Git trees are identical; the following read-only preflight passed on the
-original checkout:
+| layout-electrode-extractor | particle-sim | Status |
+| --- | --- | --- |
+| `77b335a` and later on `main` | branch `v5-extractor-integration`, commit `fca4806` | Supported. Configured export, 50% full-hole CNO (E1), central-window support audit (E2), and CNO/open dedup with sidecar hash binding (E3) |
+| legacy export without `--config` | `aae492a` (`schema2-contacts-cno`) | `validate-input` passed in the P2 check; not rechecked against `fca4806` |
+
+The particle-sim branch `v5-extractor-integration` is `aae492a` plus one commit containing
+the reviewed E1–E3 and sparse-CNO changes. Its Git tree is identical to the reviewed
+isolated-copy commit `7213deb`, and both sides passed independent Claude Opus 5.5 high reviews. Local validation of `fca4806` passed 369 particle-sim
+tests, Ruff, and `validate-input` on the latest configured synthetic export
+(1200×1200, 155 electrodes, 11,879 pairs, zero unresolved). After both repositories are
+published, replace these commit IDs with release tags.
+
+To check a pair of versions, export with this repository and validate from the
+particle-sim checkout:
 
 ```sh
-GIT_OPTIONAL_LOCKS=0 git -C /Users/jonghyeonlee/git/particle-sim apply --check \
-  /Users/jonghyeonlee/git/layout-electrode-extractor/outputs/v5-integration-20260924/particle-sim-v5-cumulative-aae492a-to-3bedd08.patch
+.venv/bin/layout-electrode-extractor export-particle-sim \
+  outputs/demo/extraction outputs/demo/particle-sim \
+  --config examples/synthetic-particle-config.json
+<particle-sim>/.venv/bin/particle-sim validate-input \
+  --product-config outputs/demo/particle-sim/product.yaml
 ```
 
-The original particle-sim checkout has **not** been patched. After reviewing the exact
-patch and resolving the [remaining adapter and derived-output advisories](docs/orca/FINAL-OPUS-CODE-REVIEW-20260925.md),
-an operator can apply it with `git -C /Users/jonghyeonlee/git/particle-sim apply <patch-path>`.
-Then verify from that repository with `.venv/bin/python -m pytest -q tests`,
-`.venv/bin/ruff check src tests`, and `.venv/bin/particle-sim validate-input
---product-config <absolute-path-to-product.yaml>` using the manifest linked above.
-
-The [sparse CNO benchmark](outputs/v5-integration-20260924/cno-sparse-bench/REPORT.md)
-measures three real CNT1 links at 1, 30, 40 and 50 µm and all 32 sizes on one
-225-pixel hole. The [refreshed bounded geometry result](outputs/v5-integration-20260924/i1-latest/e3-sparse-geometry-probe/geometry-probe.json)
-and [candidate provenance](outputs/v5-integration-20260924/i1-latest/e3-sparse-geometry-probe/provenance.json)
-record 12 actual short maps and 12 actual CNO maps from the latest export, with a
-synthetic open map at 1 µm. It ran in 6.81 seconds with 844 MB maximum RSS. That
-synthetic open map is not an actual open-kernel result. General circuit-open behaviour,
-the full pair-by-size sweep, and fabrication physics are unverified; the central-window
-audit explicitly marks nonlocal open connectivity unsupported. Process thicknesses,
-insulating materials and particle occurrence weights still require measured inputs.
+The synthetic evidence does not certify circuit-open connectivity, the full
+pair × size × step sweep, or fabrication physics. Process thicknesses, insulating
+materials, and particle occurrence weights still require measured inputs; see the
+[real-data guide](docs/REAL-DATA-GUIDE.ko.md). Integration history and review reports are
+under [`docs/orca/`](docs/orca/CHECKPOINT.md).
 
 ## Commands and outputs
 
