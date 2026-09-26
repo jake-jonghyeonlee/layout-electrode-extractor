@@ -83,7 +83,7 @@ For the current mixed synthetic extraction, export and validate with:
 .venv/bin/layout-electrode-extractor export-particle-sim \
   outputs/rgb-metal-bridge-20260924/extraction outputs/my-mixed-export \
   --config examples/synthetic-particle-config.json
-/Users/jonghyeonlee/git/particle-sim/.venv/bin/particle-sim validate-input \
+<particle-sim>/.venv/bin/particle-sim validate-input \
   --product-config outputs/my-mixed-export/product.yaml
 ```
 
@@ -164,7 +164,7 @@ For a legacy one-pair-per-layer extraction, omit `--config` and validate its sch
 manifest with:
 
 ```sh
-/Users/jonghyeonlee/git/particle-sim/.venv/bin/particle-sim validate-input \
+<particle-sim>/.venv/bin/particle-sim validate-input \
   --product-config PATH/TO/LEGACY/particle-sim/product.yaml
 ```
 
