@@ -1,5 +1,7 @@
 # Layout electrode extractor
 
+[한국어 README](README.ko.md)
+
 This package extracts electrode connectivity from binary layout layers using exact periodic
 identity, stores a 2×2 unit image at the original pixel pitch, and provides a local review UI
 for names and circuit anchors. It is a geometry workflow; generated synthetic values and the
