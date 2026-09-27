@@ -64,6 +64,13 @@ python -m venv .venv
 
 혼합 CNT1 합성 추출은 설정 파일과 함께 export하고 검증합니다.
 
+이물 유입 단계의 `surface_model`은 `flat`, `conformal`, `partial`을 지원합니다.
+`after_pattern`에는 `conformal`을 기본 권장합니다. `partial`은 landing 단계까지
+모든 비도체 stack 행에 명시적인 `planarization_factor`가 필요합니다.
+`flat`과 0 contact margin을 함께 쓰면 short CA가 구조적으로 0이 되어 particle-sim이
+`STRUCTURAL_ZERO_SHORT` 경고를 냅니다. CNT open 단계는 CNO의 의도적인 flat-film 근사로
+`flat`을 유지합니다.
+
 ```sh
 .venv/bin/layout-electrode-extractor export-particle-sim \
   outputs/demo/extraction outputs/demo/particle-sim \

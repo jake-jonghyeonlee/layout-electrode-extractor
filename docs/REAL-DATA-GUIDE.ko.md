@@ -125,7 +125,7 @@ PNG로 넣어야 합니다.
 - `semantics`:
   - `after_pattern`: 도체 패턴 형성 후 유입
   - `cnt_open_before_fill_approximation`: CNT 개구 후, 충전 전 유입. 홀 행 뒤에만 둘 수 있습니다.
-- `surface_model`은 현재 `flat`만 지원합니다.
+- `surface_model`은 `flat`, `conformal`, `partial`을 지원합니다. `after_pattern`에는 `conformal`을 기본 권장하며 CNT open 단계는 의도적인 flat-film 근사로 `flat`을 유지합니다. `partial`은 landing 단계까지 모든 비도체 stack 행에 `planarization_factor`가 필요합니다. `flat`과 0 contact margin을 함께 쓰면 short CA가 구조적으로 0이 되며 particle-sim이 `STRUCTURAL_ZERO_SHORT` 경고를 냅니다.
 - `fab_distribution_layer`는 6단계 Fab 이물 표의 같은 열 값과 이름이 일치해야 합니다.
 - `contact_applicable_stages`에는 접점이 있는 홀 레이어마다 그 홀의 CNT 개구 stage를 정확히 하나 적습니다.
 

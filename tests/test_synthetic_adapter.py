@@ -904,7 +904,7 @@ def test_per_hole_adversarial_geometry_has_distinct_policy(
         (lambda c: c.update(particle_sizes_um=[31]), "strictly increasing"),
         (lambda c: c["process_stack"][0].update(thickness_um=float("nan")), "finite"),
         (lambda c: c["process_stack"][0].update(patterned=False), "patterned"),
-        (lambda c: c["source_stages"][0].update(surface_model="conformal"), "only flat"),
+        (lambda c: c["source_stages"][0].update(surface_model="unknown"), "surface_model"),
         (lambda c: c["source_stages"][1].update(step_id="SOURCE_CNT1_OPEN"), "duplicate"),
         (lambda c: c["contact_applicable_stages"].update(CNT1=["SOURCE_CNT2_OPEN"]), "CNT1"),
     ],
@@ -918,6 +918,65 @@ def test_config_rejected_before_output(
     with pytest.raises(ManifestError, match=message):
         export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
     assert not output.exists()
+
+
+@pytest.mark.parametrize("surface_model", ["flat", "conformal", "partial"])
+def test_source_surface_model_passed_through(
+    tmp_path: Path, mixed_extraction: Path, surface_model: str
+) -> None:
+    config = _synthetic_config()
+    config["source_stages"][-1]["surface_model"] = surface_model
+    if surface_model == "partial":
+        for row in config["process_stack"]:
+            if row["material_type"] != "conductor":
+                row["planarization_factor"] = 0.25
+    output = tmp_path / "product"
+    export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    product = json.loads((output / "product.yaml").read_text())
+    assert [stage["surface_model"] for stage in product["particle_source_steps"]] == [
+        "flat", "flat", surface_model
+    ]
+    if surface_model == "partial":
+        assert all(
+            row["planarization_factor"] == 0.25
+            for row in product["stack"] if row["material_type"] != "conductor"
+        )
+
+
+@pytest.mark.parametrize("missing", ["ILD_ACTIVE_OACTIVE", "CNT1", "CNT2"])
+def test_partial_surface_requires_nonconductor_factors_before_output(
+    tmp_path: Path, mixed_extraction: Path, missing: str
+) -> None:
+    config = _synthetic_config()
+    config["source_stages"][-1]["surface_model"] = "partial"
+    for row in config["process_stack"]:
+        if row["material_type"] != "conductor":
+            row["planarization_factor"] = 0.5
+        if row["id"] == missing:
+            row.pop("planarization_factor", None)
+    output = tmp_path / "product"
+    with pytest.raises(ManifestError, match=f"partial.*planarization_factor.*{missing}"):
+        export_particle_sim(mixed_extraction, output, _write_config(tmp_path, config))
+    assert not output.exists()
+
+
+def test_partial_surface_does_not_require_factors_above_landing(tmp_path: Path) -> None:
+    from layout_electrode_extractor.export_config import load_export_config
+
+    config = _synthetic_config()
+    config["source_stages"] = [{
+        "step_id": "EARLY", "after_layer": "GAT2", "semantics": "after_pattern",
+        "surface_model": "partial", "fab_distribution_layer": "ASSUMED_EARLY"
+    }]
+    config["contact_applicable_stages"] = {}
+    for row in config["process_stack"]:
+        row.pop("planarization_factor", None)
+    meta = {
+        "physical_stack": [r["id"] for r in config["process_stack"] if r["mask_layer"]],
+        "stack": [r["id"] for r in config["process_stack"] if r["kind"] == "conductor"],
+    }
+    validated = load_export_config(_write_config(tmp_path, config), meta, [])
+    assert validated["source_stages"] == config["source_stages"]
 
 
 def test_synthetic_size_subset_and_measured_contact_rejection(
