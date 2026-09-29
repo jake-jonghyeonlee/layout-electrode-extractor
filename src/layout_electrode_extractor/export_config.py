@@ -160,8 +160,19 @@ def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> di
             raise ManifestError(f"{field}.semantics is unsupported")
         if stage["semantics"] == "after_pattern" and kinds[after] != "conductor":
             raise ManifestError(f"{field}: after_pattern must follow a conductor row")
-        if stage["surface_model"] != "flat":
-            raise ManifestError(f"{field}.surface_model: only flat is supported")
+        surface_model = stage["surface_model"]
+        if not isinstance(surface_model, str) or surface_model not in {
+            "flat", "conformal", "partial"
+        }:
+            raise ManifestError(f"{field}.surface_model must be flat, conformal or partial")
+        if surface_model == "partial":
+            # Match particle-sim's schema prerequisite, including unpatterned hole rows.
+            for row in rows[: order[after] + 1]:
+                if row["material_type"] != "conductor" and "planarization_factor" not in row:
+                    raise ManifestError(
+                        f"{field}: partial surface_model requires planarization_factor "
+                        f"on process_stack row {row['id']} at or below {after}"
+                    )
         if stage["semantics"] == "cnt_open_before_fill_approximation" and kinds[after] != "hole":
             raise ManifestError(f"{field}: CNT open approximation must follow a hole row")
         stages.append(stage)

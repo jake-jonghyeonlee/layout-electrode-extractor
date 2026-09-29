@@ -93,7 +93,12 @@ their own physical mask and are converted to non-patterned inorganic simulator s
 unmasked dielectric rows have no stage. The example emits 32 particle diameters, 1–30, 40,
 and 50 µm. An explicit synthetic size list must be a strictly increasing subset of those
 diameters. `adapter-provenance.json` records the selected list, stage semantics, and each
-hole's raw, cut, and effective pixel counts. The CNT open stages use a flat-film approximation;
+hole's raw, cut, and effective pixel counts. Source stages support `flat`, `conformal`,
+and `partial`; `after_pattern` stages should use
+`conformal` by default. `partial` requires explicit `planarization_factor` values on all
+non-conductor stack rows through the landing stage. With `flat` and zero contact margin,
+short CA is structurally zero and particle-sim emits `STRUCTURAL_ZERO_SHORT` warnings.
+The CNT open stages intentionally use a flat-film approximation;
 they establish API and geometry compatibility, not physical CNO validity. A measured config
 with contacts is rejected because particle-sim cannot yet model the open CNT surface.
 

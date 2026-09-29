@@ -16,7 +16,7 @@
   "source_stages": [
     {"step_id": "SOURCE_CNT1_OPEN", "after_layer": "CNT1", "semantics": "cnt_open_before_fill_approximation", "surface_model": "flat", "fab_distribution_layer": "ASSUMED_CNT1"},
     {"step_id": "SOURCE_CNT2_OPEN", "after_layer": "CNT2", "semantics": "cnt_open_before_fill_approximation", "surface_model": "flat", "fab_distribution_layer": "ASSUMED_CNT2"},
-    {"step_id": "SOURCE_AFTER_METAL1", "after_layer": "METAL1", "semantics": "after_pattern", "surface_model": "flat", "fab_distribution_layer": "ASSUMED_TOP"}
+    {"step_id": "SOURCE_AFTER_METAL1", "after_layer": "METAL1", "semantics": "after_pattern", "surface_model": "conformal", "fab_distribution_layer": "ASSUMED_TOP"}
   ],
   "contact_applicable_stages": {"CNT1": ["SOURCE_CNT1_OPEN"], "CNT2": ["SOURCE_CNT2_OPEN"]}
 }
