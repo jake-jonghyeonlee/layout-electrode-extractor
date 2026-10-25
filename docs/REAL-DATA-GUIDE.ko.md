@@ -126,7 +126,9 @@ PNG로 넣어야 합니다.
   - `after_pattern`: 도체 패턴 형성 후 유입
   - `cnt_open_before_fill_approximation`: CNT 개구 후, 충전 전 유입. 홀 행 뒤에만 둘 수 있습니다.
 - `surface_model`은 `flat`, `conformal`, `partial`을 지원합니다. `after_pattern`에는 `conformal`을 기본 권장하며 CNT open 단계는 의도적인 flat-film 근사로 `flat`을 유지합니다. `partial`은 landing 단계까지 모든 비도체 stack 행에 `planarization_factor`가 필요합니다. `flat`과 0 contact margin을 함께 쓰면 short CA가 구조적으로 0이 되며 particle-sim이 `STRUCTURAL_ZERO_SHORT` 경고를 냅니다.
-- `fab_distribution_layer`는 6단계 Fab 이물 표의 같은 열 값과 이름이 일치해야 합니다.
+- `fab_distribution_layer`(Fab 이물 밀도를 가져올 layer)는 **착지 layer 바로 위 마스크 layer**입니다(2026-09-30 결정). 도체 행과 접점이 있는 홀 행이 마스크 layer이고, 마스크 없는 절연막과 접점 없는 홀 행은 건너뜁니다. 생략하면 export가 자동으로 채우며, 다른 이름을 적으면 거부합니다. 위에 마스크 layer가 없을 때(예: 최상부 METAL1)만 직접 적습니다.
+- 예시 템플릿: `SRC_AFTER_GAT2` → `OACTIVE`, `SRC_CNT1_OPEN` → `CNT2`, `SRC_CNT2_OPEN` → `METAL1`, `SRC_AFTER_METAL1` → 직접 적은 `METAL_PHOTO`.
+- 이 이름은 6단계 Fab 이물 표의 같은 열 값과 일치해야 합니다.
 - `contact_applicable_stages`에는 접점이 있는 홀 레이어마다 그 홀의 CNT 개구 stage를 정확히 하나 적습니다.
 
 ### 4.3 입경 (`particle_sizes_um`)
@@ -204,7 +206,7 @@ export는 검증을 모두 통과해야 출력 폴더를 만듭니다. 실패하
   size_bin_right_um, size_representative_um, mean_particle_count,
   inspection_area_per_sample_mm2, measurement_period, particle_type`
 - 선택 열: `sample_count`, `source_id`, `source_hash`
-- `fab_distribution_layer` 값은 config `source_stages`의 값과 같아야 합니다.
+- `fab_distribution_layer` 값은 export된 `product.yaml`의 source step 값(착지 layer 바로 위 마스크 layer)과 같아야 합니다.
 - 같은 (`fab_id`, `product_family`, 단계) 안에서 bin 구간이 겹치면 안 됩니다.
 - `--bin-method`에는 기본값이 없어서 직접 골라야 합니다: `exact_point`, `piecewise_constant`, `piecewise_linear`, `empirical_samples`.
 
@@ -245,5 +247,5 @@ $PS apply-fab --run outputs/my-run --fab-data my-layout/fab-mean.csv \
 - [ ] review에서 전극 ↔ 회로 대응 확인
 - [ ] `process-config.json`에 실제 두께·물성, source stage, 입경, 완전한 `net_map` 작성
 - [ ] `export-particle-sim --config` 성공, `validate-input`이 `ok`에 미해결 0
-- [ ] `fab-mean.csv`의 `fab_distribution_layer`가 config와 일치
+- [ ] `fab-mean.csv`의 `fab_distribution_layer`가 착지 layer 바로 위 마스크 layer 이름과 일치
 - [ ] 소규모 실행 후 전체 계산으로 확대

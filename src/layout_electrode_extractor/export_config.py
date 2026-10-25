@@ -38,6 +38,41 @@ def _number(value: object, field: str, *, positive: bool = True) -> float:
     return result
 
 
+def upper_mask_row(rows: list[dict], after: str, contacts: list[dict]) -> str | None:
+    """The mask row directly above `after`, as particle-sim counts it, or None.
+
+    Conductor rows and contact-bearing hole rows have masks in the particle-sim manifest;
+    unmasked dielectrics and hole rows without contacts are skipped.
+    """
+    holes = {row["layer"] for row in contacts}
+    ids = [row["id"] for row in rows]
+    for row in rows[ids.index(after) + 1:]:
+        if row["kind"] == "conductor" or (row["kind"] == "hole" and row["id"] in holes):
+            return row["id"]
+    return None
+
+
+def _fab_layer(stage: dict, rows: list[dict], contacts: list[dict], field: str) -> str:
+    """Fab density comes from the mask layer directly above the landing layer (2026-09-30)."""
+    upper = upper_mask_row(rows, stage["after_layer"], contacts)
+    given = stage.get("fab_distribution_layer")
+    if given is not None:
+        given = _identifier(given, f"{field}.fab_distribution_layer")
+    if upper is None:
+        if given is None:
+            raise ManifestError(
+                f"{field}: no mask layer above {stage['after_layer']}; "
+                "set fab_distribution_layer explicitly"
+            )
+        return given
+    if given is not None and given != upper:
+        raise ManifestError(
+            f"{field}.fab_distribution_layer must be {upper}, "
+            f"the mask layer directly above {stage['after_layer']}"
+        )
+    return upper
+
+
 def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> dict:
     """Validate input completely before the adapter creates an output directory."""
     try:
@@ -134,15 +169,14 @@ def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> di
     order = {row["id"]: index for index, row in enumerate(rows)}
     for index, value in enumerate(config["source_stages"]):
         field = f"source_stages[{index}]"
-        stage = _fields(
+        stage = dict(_fields(
             value,
-            {"step_id", "after_layer", "semantics", "surface_model", "fab_distribution_layer"},
-            set(),
+            {"step_id", "after_layer", "semantics", "surface_model"},
+            {"fab_distribution_layer"},
             field,
-        )
+        ))
         step_id = _identifier(stage["step_id"], f"{field}.step_id")
         after = _identifier(stage["after_layer"], f"{field}.after_layer")
-        _identifier(stage["fab_distribution_layer"], f"{field}.fab_distribution_layer")
         if step_id in stage_ids:
             raise ManifestError(f"duplicate source stage {step_id}")
         stage_ids.add(step_id)
@@ -175,7 +209,9 @@ def load_export_config(path: str | Path, meta: dict, contacts: list[dict]) -> di
                     )
         if stage["semantics"] == "cnt_open_before_fill_approximation" and kinds[after] != "hole":
             raise ManifestError(f"{field}: CNT open approximation must follow a hole row")
+        stage["fab_distribution_layer"] = _fab_layer(stage, rows, contacts, field)
         stages.append(stage)
+    config["source_stages"] = stages  # carries each resolved fab_distribution_layer
     applicable = config["contact_applicable_stages"]
     if not isinstance(applicable, dict):
         raise ManifestError("contact_applicable_stages must be an object")

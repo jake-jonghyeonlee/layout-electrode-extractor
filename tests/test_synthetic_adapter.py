@@ -966,7 +966,7 @@ def test_partial_surface_does_not_require_factors_above_landing(tmp_path: Path) 
     config = _synthetic_config()
     config["source_stages"] = [{
         "step_id": "EARLY", "after_layer": "GAT2", "semantics": "after_pattern",
-        "surface_model": "partial", "fab_distribution_layer": "ASSUMED_EARLY"
+        "surface_model": "partial"
     }]
     config["contact_applicable_stages"] = {}
     for row in config["process_stack"]:
@@ -976,7 +976,38 @@ def test_partial_surface_does_not_require_factors_above_landing(tmp_path: Path) 
         "stack": [r["id"] for r in config["process_stack"] if r["kind"] == "conductor"],
     }
     validated = load_export_config(_write_config(tmp_path, config), meta, [])
-    assert validated["source_stages"] == config["source_stages"]
+    assert validated["source_stages"] == [
+        {**config["source_stages"][0], "fab_distribution_layer": "OACTIVE"}
+    ]
+
+
+def test_fab_layer_is_the_mask_layer_directly_above_the_landing_layer(tmp_path: Path) -> None:
+    from layout_electrode_extractor.export_config import load_export_config
+
+    config = _synthetic_config()
+    config["contact_applicable_stages"] = {}
+    meta = {
+        "physical_stack": [r["id"] for r in config["process_stack"] if r["mask_layer"]],
+        "stack": [r["id"] for r in config["process_stack"] if r["kind"] == "conductor"],
+    }
+
+    def load(**stage: str) -> list[dict]:
+        config["source_stages"] = [{"step_id": "S", "semantics": "after_pattern",
+                                    "surface_model": "conformal", **stage}]
+        return load_export_config(_write_config(tmp_path, config), meta, [])["source_stages"]
+
+    # The unmasked ILD between GAT2 and OACTIVE is skipped.
+    assert load(after_layer="GAT2")[0]["fab_distribution_layer"] == "OACTIVE"
+    assert load(after_layer="GAT2", fab_distribution_layer="OACTIVE")[0][
+        "fab_distribution_layer"] == "OACTIVE"
+    with pytest.raises(ManifestError, match="must be OACTIVE"):
+        load(after_layer="GAT2", fab_distribution_layer="GATE_PHOTO")
+    # Hole rows without contacts have no mask in particle-sim, so GAT3 -> METAL1.
+    assert load(after_layer="GAT3")[0]["fab_distribution_layer"] == "METAL1"
+    with pytest.raises(ManifestError, match="no mask layer above METAL1"):
+        load(after_layer="METAL1")
+    assert load(after_layer="METAL1", fab_distribution_layer="TOP")[0][
+        "fab_distribution_layer"] == "TOP"
 
 
 def test_synthetic_size_subset_and_measured_contact_rejection(
